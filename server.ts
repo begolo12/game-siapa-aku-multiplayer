@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import "dotenv/config";
 import { Pool } from "pg";
-import { createServer as createViteServer } from "vite";
 import { User, SubmittedStory, ChatMessage, GuessLog, StoryTemplate, GamePhase, PlayerAnswer, Session } from "./src/types";
 
 // Standard preset templates — semua bertema proyek konstruksi & perusahaan
@@ -865,8 +864,12 @@ export async function createApp() {
 
   // ------------------------- Vite setup -------------------------
 
-  // Vite middleware for development
+  // Vercel menyajikan frontend statis sendiri; Function hanya membutuhkan API.
+  if (process.env.VERCEL) return app;
+
+  // Vite hanya dimuat pada server pengembangan lokal.
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
