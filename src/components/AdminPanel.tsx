@@ -310,7 +310,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
             </div>
           ) : (
             <div key={user.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2.5">
-              <div><p className="text-sm font-bold text-white">{user.username}</p><p className="text-[11px] text-slate-500">{user.score} poin · {user.submittedCount} cerita</p></div>
+              <div><p className="text-sm font-bold text-white">{user.username}</p><p className="text-[11px] text-slate-500">{user.score} poin · {user.submittedCount} cerita{session.sessionId && user.isEliminated ? " · Gugur" : ""}</p></div>
               <div className="flex gap-2"><button onClick={() => { setEditingUserId(user.id); setEditName(user.username); setEditPassword(""); }} className="p-2 rounded-lg text-cyan-300 hover:bg-cyan-500/10" aria-label={`Edit ${user.username}`}><Pencil className="w-4 h-4" /></button><button onClick={() => deleteUser(user)} disabled={userSaving} className="p-2 rounded-lg text-rose-300 hover:bg-rose-500/10 disabled:opacity-50" aria-label={`Hapus ${user.username}`}><Trash2 className="w-4 h-4" /></button></div>
             </div>
           ))}

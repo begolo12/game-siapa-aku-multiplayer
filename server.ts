@@ -103,7 +103,10 @@ let dbState: DBState = {
 function normalizeDB() {
   if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
   if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
-  dbState.users.forEach(user => { if (user.isReady === undefined) user.isReady = false; });
+  dbState.users.forEach(user => {
+    if (user.isReady === undefined) user.isReady = false;
+    if (user.isEliminated === undefined) user.isEliminated = false;
+  });
 
   const hasAdmin = dbState.users.some(u => u.username === "admin");
   if (!hasAdmin) {
@@ -397,6 +400,9 @@ export async function createApp() {
     if (!currentUser) {
       return res.status(401).json({ error: "Harap login untuk menebak." });
     }
+    if (currentUser.isEliminated) {
+      return res.status(403).json({ error: "Anda gugur karena belum mengumpulkan 2 cerita saat game dimulai." });
+    }
 
     const { storyId, guessText } = req.body;
     if (!storyId || !guessText) {
@@ -644,8 +650,9 @@ export async function createApp() {
     }
 
     const players = dbState.users.filter(user => !user.isAdmin);
-    const notReady = players.filter(user => !user.isReady || dbState.stories.filter(story => story.userId === user.id).length < 2);
-    if (notReady.length) return res.status(400).json({ error: `Belum siap: ${notReady.map(user => user.username).join(", ")}. Setiap pemain wajib siap dan membuat 2 cerita.` });
+    players.forEach(user => {
+      user.isEliminated = dbState.stories.filter(story => story.userId === user.id).length < 2;
+    });
 
     // Pick up to 25 random stories (shuffle + slice)
     const shuffled = [...allStories].sort(() => Math.random() - 0.5);
@@ -676,7 +683,7 @@ export async function createApp() {
       id: "ann-" + Math.random().toString(36).substr(2, 9),
       userId: "system",
       username: "System",
-      text: `🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!`,
+      text: `🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!${players.some(user => user.isEliminated) ? " Pemain tanpa 2 cerita dinyatakan gugur." : ""}`,
       isAdmin: true,
       timestamp: Date.now()
     });
@@ -721,7 +728,7 @@ export async function createApp() {
     }
 
     // Build PlayerAnswer for every player who guessed
-    const players = dbState.users.filter(u => !u.isAdmin);
+    const players = dbState.users.filter(u => !u.isAdmin && !u.isEliminated);
     const sessionStories = dbState.stories.filter(s => dbState.session.mysteryIds.includes(s.id));
 
     dbState.playerResults = [];

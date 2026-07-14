@@ -169,7 +169,7 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     <div className="space-y-6">
       {session.phase === "idle" && !session.sessionId && (
         <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-5 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-          <div><p className="text-sm font-bold text-white">Lobby permainan</p><p className="text-xs text-slate-400 mt-1">Buat 2 cerita, lalu tekan siap. Admin memulai game saat semua pemain siap.</p></div>
+          <div><p className="text-sm font-bold text-white">Lobby permainan</p><p className="text-xs text-slate-400 mt-1">Lengkapi 2 cerita sebelum admin mulai. Pemain yang belum lengkap akan gugur.</p></div>
           {!currentUser?.isAdmin && <button onClick={toggleReady} disabled={readyLoading || currentUser?.isReady} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${currentUser?.isReady ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-cyan-600 hover:bg-cyan-500 text-white"}`}>{currentUser?.isReady ? "✓ Siap bermain" : readyLoading ? "Memproses..." : "Saya siap"}</button>}
           {currentUser?.isAdmin && <span className="text-sm font-bold text-cyan-300">{users.filter(user => !user.isAdmin && user.isReady).length}/{users.filter(user => !user.isAdmin).length} siap</span>}
         </div>
@@ -268,6 +268,12 @@ export default function StoryList({ stories, currentUser, users, session, onGues
         </div>
       )}
 
+      {session.phase === "playing" && currentUser?.isEliminated && (
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-950/30 p-4 text-sm font-semibold text-rose-200">
+          Anda gugur pada sesi ini karena belum mengumpulkan 2 cerita sebelum game dimulai.
+        </div>
+      )}
+
       {/* Stories Grid */}
       <div className="grid grid-cols-1 gap-6">
         {filteredStories.map((story) => {
@@ -349,6 +355,10 @@ export default function StoryList({ stories, currentUser, users, session, onGues
                     <span className="font-extrabold text-emerald-300 bg-emerald-500/15 border border-emerald-500/20 px-4 py-1.5 rounded-xl text-center">
                       Jawaban: "{story.answer}"
                     </span>
+                  </div>
+                ) : currentUser?.isEliminated ? (
+                  <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3 text-sm font-semibold text-rose-200">
+                    Status gugur — tidak dapat menebak pada sesi ini.
                   </div>
                 ) : (
                   <div className="space-y-3">

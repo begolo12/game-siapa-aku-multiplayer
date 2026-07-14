@@ -6,6 +6,7 @@ export interface User {
   submittedCount: number;
   isAdmin: boolean;
   isReady?: boolean;
+  isEliminated?: boolean;
 }
 
 export interface StoryTemplate {
