@@ -288,10 +288,10 @@ export default function StoryList({ stories, currentUser, users, session, onGues
             >
               {/* Badges and meta */}
               <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-[#241d15]/60 border-b border-slate-800/80 text-xs">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-300">
+                <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-300">
                   <UserIcon className="w-3.5 h-3.5 text-pink-400" />
                   <span>{session.phase === "playing" ? "Tebak pemilik cerita" : "Kreator:"}</span>
-                  {session.phase !== "playing" && <span className="text-white font-bold">{story.username}</span>}
+                  {session.phase !== "playing" && <span className="break-mobile text-white font-bold">{story.username}</span>}
                   {isMine && (
                     <span className="bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                       Saya
@@ -299,7 +299,7 @@ export default function StoryList({ stories, currentUser, users, session, onGues
                   )}
                 </div>
 
-                <div className="flex items-center gap-3 text-slate-400 font-mono text-[11px]">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-slate-400 font-mono text-[11px]">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
                     {formatDate(story.createdAt)}

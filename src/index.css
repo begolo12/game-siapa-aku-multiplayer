@@ -81,6 +81,32 @@
 html {
   scroll-behavior: smooth;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: clip;
+}
+
+/* Mobile: every component must size inside the visual viewport. */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body, #root {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+img, svg, video, canvas {
+  max-width: 100%;
+}
+
+input, textarea, select, button {
+  max-width: 100%;
+}
+
+/* Long usernames/story text must wrap rather than widen the page. */
+.break-mobile {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Touch-friendly tap targets */
