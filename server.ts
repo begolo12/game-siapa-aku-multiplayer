@@ -186,10 +186,9 @@ async function saveDB() {
   }
 }
 
-async function startServer() {
+export async function createApp() {
   await initDatabase();
   const app = express();
-  const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
   app.use(express.json());
 
@@ -881,9 +880,17 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  createApp().then(app => {
+    const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }).catch(error => {
+    console.error("Server gagal dimulai:", error);
+    process.exit(1);
+  });
+}
