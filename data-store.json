@@ -8,6 +8,15 @@
       "solvedCount": 0,
       "submittedCount": 0,
       "isAdmin": true
+    },
+    {
+      "id": "u-xuf284svb",
+      "username": "TestRepro",
+      "password": "test1234",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
     }
   ],
   "stories": [],

@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import "dotenv/config";
+import { Pool } from "pg";
 import { createServer as createViteServer } from "vite";
 import { User, SubmittedStory, ChatMessage, GuessLog, StoryTemplate, GamePhase, PlayerAnswer, Session } from "./src/types";
 
@@ -55,6 +57,8 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
 
 const DB_FILE = path.join(process.cwd(), "data-store.json");
 const ROUND_DURATION_MS = 30_000;
+const DATABASE_URL = process.env.DATABASE_URL;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
 const firstName = (value: string) => value.trim().split(/\s+/)[0];
 
@@ -97,8 +101,26 @@ let dbState: DBState = {
   playerResults: []
 };
 
-// Load database from file if exists
-function loadDB() {
+function normalizeDB() {
+  if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
+  if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
+  dbState.users.forEach(user => { if (user.isReady === undefined) user.isReady = false; });
+
+  const hasAdmin = dbState.users.some(u => u.username === "admin");
+  if (!hasAdmin) {
+    dbState.users.push({
+      id: "admin-uid", username: "admin", password: "admin123", score: 100,
+      solvedCount: 5, submittedCount: 2, isAdmin: true
+    });
+  } else {
+    const adminObj = dbState.users.find(u => u.username === "admin")!;
+    adminObj.isAdmin = true;
+    adminObj.password = adminObj.password || "admin123";
+  }
+}
+
+// Load fallback database from file when DATABASE_URL is unavailable.
+function loadFileDB() {
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, "utf-8");
@@ -113,34 +135,12 @@ function loadDB() {
           session: parsed.session || dbState.session,
           playerResults: parsed.playerResults || dbState.playerResults
         };
-        // Migrate session: ensure new fields exist
-        if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
-        if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
-        dbState.users.forEach(user => { if (user.isReady === undefined) user.isReady = false; });
-
-        // Ensure admin always exists and is admin
-        const hasAdmin = dbState.users.some(u => u.username === "admin");
-        if (!hasAdmin) {
-          dbState.users.push({
-            id: "admin-uid",
-            username: "admin",
-            password: "admin123",
-            score: 100,
-            solvedCount: 5,
-            submittedCount: 2,
-            isAdmin: true
-          });
-        } else {
-          // Verify admin credentials
-          const adminObj = dbState.users.find(u => u.username === "admin")!;
-          adminObj.isAdmin = true;
-          adminObj.password = adminObj.password || "admin123";
-        }
-        // Persist any migration changes
-        saveDB();
+        normalizeDB();
+        saveFileDB();
       }
     } else {
-      saveDB();
+      normalizeDB();
+      saveFileDB();
     }
   } catch (error) {
     console.error("Error loading database file, keeping in-memory state:", error);
@@ -148,7 +148,7 @@ function loadDB() {
 }
 
 // Save database to file
-function saveDB() {
+function saveFileDB() {
   try {
     const dir = path.dirname(DB_FILE);
     if (!fs.existsSync(dir)) {
@@ -160,10 +160,34 @@ function saveDB() {
   }
 }
 
-// Initialize database
-loadDB();
+async function initDatabase() {
+  if (!pool) {
+    loadFileDB();
+    console.warn("DATABASE_URL tidak tersedia; memakai data-store.json.");
+    return;
+  }
+  await pool.query(`CREATE TABLE IF NOT EXISTS app_state (id BOOLEAN PRIMARY KEY DEFAULT TRUE, state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), CONSTRAINT one_state CHECK (id))`);
+  const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
+  if (result.rowCount) dbState = result.rows[0].state;
+  normalizeDB();
+  await saveDB();
+  console.info("PostgreSQL Neon terhubung.");
+}
+
+async function saveDB() {
+  if (!pool) {
+    saveFileDB();
+    return;
+  }
+  try {
+    await pool.query(`INSERT INTO app_state (id, state, updated_at) VALUES (TRUE, $1::jsonb, NOW()) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()`, [JSON.stringify(dbState)]);
+  } catch (error) {
+    console.error("Error saving database state to PostgreSQL:", error);
+  }
+}
 
 async function startServer() {
+  await initDatabase();
   const app = express();
   const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
