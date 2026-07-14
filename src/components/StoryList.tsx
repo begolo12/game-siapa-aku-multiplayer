@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { SubmittedStory, User, Session } from "../types";
 import { CheckCircle2, Send, HelpCircle, Lock, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
 
@@ -18,11 +18,8 @@ export default function StoryList({ stories, currentUser, users, session, onGues
   const [feedback, setFeedback] = useState<{ [storyId: string]: { isCorrect: boolean; message: string } }>({});
   const [submitting, setSubmitting] = useState<{ [storyId: string]: boolean }>({});
   const [filterType, setFilterType] = useState<"playable" | "solved" | "mine" | "all">("playable");
-  const [openFor, setOpenFor] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(ROUND_SECONDS);
   const [readyLoading, setReadyLoading] = useState(false);
-  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pickedSuggestionRef = useRef(false);
 
   // Candidate usernames for the autocomplete (exclude the guesser)
   const candidateUsernames = users
@@ -58,23 +55,8 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     return () => { document.title = "Siapa Aku? - Multiplayer Detective Game"; };
   }, [session.phase, session.currentRound?.storyId]);
 
-  const handleFocus = (storyId: string) => {
-    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
-    setOpenFor(storyId);
-  };
-
-  const handleBlur = () => {
-    if (pickedSuggestionRef.current) {
-      pickedSuggestionRef.current = false;
-      return;
-    }
-    blurTimerRef.current = setTimeout(() => setOpenFor(null), 200);
-  };
-
   const handlePickSuggestion = (storyId: string, name: string) => {
-    pickedSuggestionRef.current = true;
     setGuesses((prev) => ({ ...prev, [storyId]: name }));
-    setOpenFor(null);
   };
 
   const handleGuessSubmit = async (e: React.FormEvent, storyId: string) => {
@@ -83,9 +65,6 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     if (!guessText.trim() || !currentUser) return;
 
     setSubmitting((prev) => ({ ...prev, [storyId]: true }));
-    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
-    setOpenFor(null);
-    pickedSuggestionRef.current = false;
     setFeedback((prev) => ({ ...prev, [storyId]: null as any }));
 
     try {
@@ -149,6 +128,9 @@ export default function StoryList({ stories, currentUser, users, session, onGues
   const filteredStories = visibleStories.filter((story) => {
     const isMine = story.userId === currentUser?.id;
     const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
+
+    // During a live round, always render its selected mystery—even for its owner.
+    if (session.phase === "playing") return true;
 
     if (filterType === "playable") {
       // Stories from others that I have not solved yet
@@ -362,7 +344,7 @@ export default function StoryList({ stories, currentUser, users, session, onGues
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <form onSubmit={(e) => handleGuessSubmit(e, story.id)} className="flex gap-2">
+                    <form onSubmit={(e) => handleGuessSubmit(e, story.id)} className="flex flex-col gap-2 sm:flex-row">
                       <div className="relative flex-1">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                           <HelpCircle className="w-4 h-4 text-pink-400" />
@@ -374,42 +356,36 @@ export default function StoryList({ stories, currentUser, users, session, onGues
                           placeholder="Pilih satu jawaban nama depan..."
                           disabled={submitting[story.id]}
                           value={guesses[story.id] || ""}
-                          onChange={(e) => {
-                            handleGuessChange(story.id, e.target.value);
-                            setOpenFor(story.id);
-                          }}
-                          onFocus={() => handleFocus(story.id)}
-                          onBlur={handleBlur}
+                          onChange={(e) => handleGuessChange(story.id, e.target.value)}
                           className="w-full text-sm bg-[#1a150f]/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500"
                         />
-                        {openFor === story.id && getSuggestions(guesses[story.id] || "").length > 0 && (
-                          <ul className="absolute z-20 mt-1 w-full bg-[#2b241c] border border-slate-800 rounded-xl shadow-xl overflow-hidden animate-fadeIn">
-                            {getSuggestions(guesses[story.id] || "").map((name) => (
-                              <li key={name}>
-                                <button
-                                  type="button"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    handlePickSuggestion(story.id, name);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-pink-500/10 hover:text-pink-300 transition-colors"
-                                >
-                                  {name}
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
                       </div>
                       <button
                         id={`guess-submit-btn-${story.id}`}
                         type="submit"
                         disabled={submitting[story.id] || !(guesses[story.id] || "").trim()}
-                        className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0 flex items-center gap-1"
+                        className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0 flex items-center justify-center gap-1"
                       >
                         Tebak <Send className="w-3.5 h-3.5" />
                       </button>
                     </form>
+                    {(guesses[story.id] || "").trim() && getSuggestions(guesses[story.id] || "").length > 0 && (
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-3">
+                        <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Saran nama</p>
+                        <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                          {getSuggestions(guesses[story.id] || "").map((name) => (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => handlePickSuggestion(story.id, name)}
+                              className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-bold transition-colors ${guesses[story.id] === name ? "border-pink-400 bg-pink-500 text-white" : "border-slate-700 bg-slate-900 text-slate-200 active:bg-pink-500/20"}`}
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Feedback messages */}
                     {feedback[story.id] && (
