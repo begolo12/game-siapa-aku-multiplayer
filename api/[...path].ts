@@ -1,12 +1,13 @@
 import type { Request, Response } from "express";
-import { createApp } from "../server";
 
-let appPromise: ReturnType<typeof createApp> | undefined;
+let appPromise: Promise<{ createApp: () => Promise<(req: Request, res: Response) => void> }> | undefined;
 
 export default async function handler(req: Request, res: Response) {
   try {
-    appPromise ??= createApp();
-    const app = await appPromise;
+    // Vercel packages files under api/ only; load the production server bundle explicitly.
+    appPromise ??= import("../dist/server.cjs");
+    const { createApp } = await appPromise;
+    const app = await createApp();
     app(req, res);
   } catch (error) {
     console.error("[api-init]", error);
