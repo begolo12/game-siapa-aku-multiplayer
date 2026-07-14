@@ -1,0 +1,27 @@
+{
+  "users": [
+    {
+      "id": "u-m0jeisn9e",
+      "username": "admin",
+      "password": "admin123",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": true
+    }
+  ],
+  "stories": [],
+  "chat": [],
+  "guessLogs": [],
+  "session": {
+    "phase": "idle",
+    "sessionId": null,
+    "mysteryIds": [],
+    "totalMysteries": 0,
+    "endedAt": null,
+    "currentRound": null,
+    "roundIndex": 0,
+    "revealedStoryIds": []
+  },
+  "playerResults": []
+}

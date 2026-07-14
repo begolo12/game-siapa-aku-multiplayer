@@ -1,0 +1,6 @@
+{
+  "name": "Game Siapa Aku Multiplayer",
+  "description": "Game Siapa Aku (Who Am I) multiplayer interaktif dengan sistem 2-wizard input cerita, ruang obrolan langsung, dan papan skor real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

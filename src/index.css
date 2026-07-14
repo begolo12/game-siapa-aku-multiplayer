@@ -1,0 +1,218 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Natural earthy palette — overrides default Tailwind tokens (minimalist) */
+@theme {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* warm neutrals (stone) */
+  --color-slate-950: #1c1917;
+  --color-slate-900: #292524;
+  --color-slate-850: #292524;
+  --color-slate-800: #44403c;
+  --color-slate-700: #57534e;
+  --color-slate-600: #78716c;
+  --color-slate-500: #a8a29e;
+  --color-slate-400: #d6d3d1;
+  --color-slate-300: #e7e5e4;
+  --color-slate-200: #f5f5f4;
+  --color-slate-100: #fafaf9;
+
+  /* clay / terracotta (was pink) */
+  --color-pink-500: #c2703d;
+  --color-pink-400: #d98a5f;
+  --color-pink-300: #e6b094;
+  --color-pink-200: #f0d2bd;
+  --color-pink-100: #f8e6d9;
+
+  /* taupe / mauve (was purple) */
+  --color-purple-600: #8c7a6b;
+  --color-purple-700: #6f5f52;
+
+  /* sage (was indigo) */
+  --color-indigo-600: #5b7a6f;
+  --color-indigo-700: #46635a;
+
+  /* mauve (was fuchsia) */
+  --color-fuchsia-600: #a87f6e;
+
+  /* muted teal (was cyan) */
+  --color-cyan-400: #7fa8a0;
+
+  /* ochre / sand (was amber) */
+  --color-amber-600: #a96f2e;
+  --color-amber-500: #c98a3f;
+  --color-amber-400: #d9a45b;
+  --color-amber-300: #e6c088;
+
+  /* moss (was emerald) */
+  --color-emerald-500: #6f9e7e;
+  --color-emerald-600: #5c876a;
+  --color-emerald-400: #88b295;
+  --color-emerald-300: #a8c4ae;
+
+  /* dusty brick (was rose/red) */
+  --color-red-500: #b4564b;
+  --color-red-600: #9c473d;
+  --color-red-400: #c66b5f;
+  --color-rose-950: #2a1a17;
+  --color-rose-900: #3a241f;
+  --color-rose-500: #b4564b;
+  --color-rose-400: #c66b5f;
+  --color-rose-300: #d98a7f;
+  --color-rose-200: #e6b0a8;
+
+  /* muted gold (was yellow) */
+  --color-yellow-300: #e8c87a;
+}
+
+/* PWA safe area padding for notch devices */
+@supports (padding-top: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Touch-friendly tap targets */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* Prevent text selection on game elements */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Responsive font scaling for very small screens */
+@media (max-width: 360px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* Fade-in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Bottom bar safe area for notch devices */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Slide-up animation */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Subtle float animation */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Glow pulse for active elements */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(194, 112, 61, 0.15); }
+  50% { box-shadow: 0 0 20px rgba(194, 112, 61, 0.3); }
+}
+
+.animate-glowPulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Shimmer loading effect */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 25%, rgba(194, 112, 61, 0.08) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Custom scrollbar */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(194, 112, 61, 0.2);
+  border-radius: 999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(194, 112, 61, 0.4);
+}
+
+/* Gradient text utility */
+.text-gradient-warm {
+  background: linear-gradient(135deg, #d98a5f, #e6c088, #7fa8a0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Card hover lift */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* Glassmorphism backdrop */
+.glass {
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+
+/* Active tab glow bar */
+.tab-glow {
+  position: relative;
+}
+
+.tab-glow::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  border-radius: 999px;
+}
