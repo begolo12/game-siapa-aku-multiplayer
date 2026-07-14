@@ -11,6 +11,6 @@ export default async function handler(req: any, res: any) {
   } catch (error) {
     console.error("[api-init]", error);
     appPromise = undefined;
-    res.status(500).json({ error: "API gagal diinisialisasi." });
+    res.status(500).json({ error: error instanceof Error ? error.message : "API gagal diinisialisasi." });
   }
 }
