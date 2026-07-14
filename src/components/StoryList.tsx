@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SubmittedStory, User, Session } from "../types";
-import { CheckCircle2, Send, HelpCircle, Lock, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
+import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
 
 const ROUND_SECONDS = 30;
 
@@ -316,22 +316,13 @@ export default function StoryList({ stories, currentUser, users, session, onGues
 
               {/* Action Area (Guessing or solved answer display) */}
               <div className="p-4 bg-[#221b14]/40 border-t border-slate-800/60">
-                {isMine ? (
-                  <div className="bg-amber-500/5 border border-amber-500/15 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
-                    <span className="text-amber-300 font-semibold flex items-center gap-1.5">
-                      <Lock className="w-4 h-4" /> Ini adalah cerita yang Anda buat.
-                    </span>
-                    <span className="font-bold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-3 py-1 rounded-lg">
-                      Jawaban Anda: "{story.answer}"
-                    </span>
-                  </div>
-                ) : isSolvedByMe ? (
+                {isSolvedByMe ? (
                   <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                       <div>
                         <span className="text-emerald-300 font-bold block">Tebakan Berhasil Dipecahkan!</span>
-                        <span className="text-xs text-slate-400">Anda mendapatkan +4 poin dari tantangan ini.</span>
+                        <span className="text-xs text-slate-400">Poin dihitung dari sisa detik ronde.</span>
                       </div>
                     </div>
                     <span className="font-extrabold text-emerald-300 bg-emerald-500/15 border border-emerald-500/20 px-4 py-1.5 rounded-xl text-center">

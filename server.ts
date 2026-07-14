@@ -432,10 +432,6 @@ export async function createApp() {
       return res.status(403).json({ error: "Tidak ada sesi aktif. Tidak bisa menebak sekarang." });
     }
 
-    if (story.userId === currentUser.id) {
-      return res.status(400).json({ error: "Anda tidak bisa menebak cerita buatan sendiri!" });
-    }
-
     if (dbState.guessLogs.some(log => log.userId === currentUser.id && log.storyId === storyId && dbState.session.mysteryIds.includes(log.storyId))) {
       return res.status(400).json({ error: "Anda sudah memakai satu kesempatan pada ronde ini." });
     }
@@ -463,7 +459,9 @@ export async function createApp() {
       dbState.guessLogs = dbState.guessLogs.slice(0, 100);
     }
 
-    const awardedPoints = isCorrect ? Math.max(1, Math.ceil((ROUND_DURATION_MS - (Date.now() - dbState.session.currentRound!.startTime)) / 3_000)) : 0;
+    const awardedPoints = isCorrect
+      ? Math.max(1, Math.ceil((ROUND_DURATION_MS - (Date.now() - dbState.session.currentRound!.startTime)) / 1_000))
+      : 0;
     log.awardedPoints = awardedPoints;
 
     if (isCorrect) {
