@@ -21,9 +21,8 @@ export default function StoryList({ stories, currentUser, users, session, onGues
   const [countdown, setCountdown] = useState(ROUND_SECONDS);
   const [readyLoading, setReadyLoading] = useState(false);
 
-  // Candidate usernames for the autocomplete (exclude the guesser)
+  // Candidate usernames for the autocomplete, including the guesser.
   const candidateUsernames = users
-    .filter((u) => u.id !== currentUser?.id)
     .map((u) => u.username.trim().split(/\s+/)[0])
     .filter((name, index, names) => names.indexOf(name) === index);
 

@@ -746,6 +746,9 @@ export async function createApp() {
       }
     }
 
+    // Results retain the completed session; the next lobby starts at zero points.
+    dbState.users.forEach(user => { user.score = 0; });
+
     dbState.chat.push({
       id: "ann-" + Math.random().toString(36).substr(2, 9),
       userId: "system",
