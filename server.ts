@@ -1216,10 +1216,10 @@ export async function createApp() {
     if (!currentUser) return res.status(401).json({ error: "Harap login." });
     const round = dbState.session.currentRound;
     if (dbState.session.phase !== "playing" || !round) {
-      return res.status(409).json({ error: "Tidak ada ronde aktif." });
+      return res.json(getSafeGameState(currentUser));
     }
     if (Date.now() - round.startTime < ROUND_DURATION_MS) {
-      return res.status(409).json({ error: "Waktu ronde belum habis." });
+      return res.json(getSafeGameState(currentUser));
     }
     await endRound();
     res.json(getSafeGameState(currentUser));
