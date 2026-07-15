@@ -400,10 +400,6 @@ export async function createApp() {
     if (!currentUser) {
       return res.status(401).json({ error: "Harap login untuk menebak." });
     }
-    if (currentUser.isEliminated) {
-      return res.status(403).json({ error: "Anda gugur karena belum mengumpulkan 2 cerita saat game dimulai." });
-    }
-
     const { storyId, guessText } = req.body;
     if (!storyId || !guessText) {
       return res.status(400).json({ error: "Menebak memerlukan id cerita dan teks tebakan." });
@@ -648,9 +644,7 @@ export async function createApp() {
     }
 
     const players = dbState.users.filter(user => !user.isAdmin);
-    players.forEach(user => {
-      user.isEliminated = dbState.stories.filter(story => story.userId === user.id).length < 2;
-    });
+    players.forEach(user => { user.isEliminated = false; });
 
     // Pick up to 25 random stories (shuffle + slice)
     const shuffled = [...allStories].sort(() => Math.random() - 0.5);
@@ -681,7 +675,7 @@ export async function createApp() {
       id: "ann-" + Math.random().toString(36).substr(2, 9),
       userId: "system",
       username: "System",
-      text: `🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!${players.some(user => user.isEliminated) ? " Pemain tanpa 2 cerita dinyatakan gugur." : ""}`,
+      text: "🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!",
       isAdmin: true,
       timestamp: Date.now()
     });
