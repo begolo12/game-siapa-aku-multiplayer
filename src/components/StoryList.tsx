@@ -21,9 +21,10 @@ interface StoryListProps {
   session: Session;
   onGuessStory: (storyId: string, guessText: string) => Promise<{ isCorrect: boolean; answer?: string }>;
   onLobbyReady: () => Promise<void>;
+  serverOffset?: number;
 }
 
-const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady }: StoryListProps) {
+const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady, serverOffset = 0 }: StoryListProps) {
   const [guesses, setGuesses] = useState<{ [storyId: string]: string }>({});
   const [feedback, setFeedback] = useState<{ [storyId: string]: { isCorrect: boolean; message: string } }>({});
   const [submitting, setSubmitting] = useState<{ [storyId: string]: boolean }>({});
@@ -52,12 +53,12 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
     const updateCountdown = () => {
-      setCountdown(Math.ceil(getRoundRemainingMs(session.currentRound!)/ 1_000));
+      setCountdown(Math.ceil(getRoundRemainingMs(session.currentRound!, Date.now(), serverOffset)/ 1_000));
     };
     updateCountdown();
     const interval = window.setInterval(updateCountdown, 1_000);
     return () => window.clearInterval(interval);
-  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime, serverOffset]);
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;

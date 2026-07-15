@@ -624,7 +624,8 @@ export async function createApp() {
       session,
       myResults: state.session.phase === "ended" && currentUser
         ? state.playerResults.filter(result => result.userId === currentUser.id)
-        : undefined
+        : undefined,
+      serverTime: Date.now()
     };
     res.json(body);
   });
@@ -979,6 +980,42 @@ export async function createApp() {
     }
     await saveDB();
     res.json({ success: true, message: "Semua data berhasil direset (users, stories, sessions, chat)." });
+  }));
+
+  // Admin Route: Restart session (keeps users and stories, resets scores/guesses/chat)
+  app.post("/api/admin/session/restart", asyncHandler(async (req, res) => {
+    const currentUser = getRequestUser(req);
+    if (!currentUser || !currentUser.isAdmin) {
+      return res.status(403).json({ error: "Akses ditolak. Rute ini hanya untuk Admin." });
+    }
+
+    // Reset user scores, solvedCounts, and ready statuses
+    dbState.users.forEach(user => {
+      user.score = 0;
+      user.solvedCount = 0;
+      user.isReady = false;
+      user.submittedCount = dbState.stories.filter(s => s.userId === user.id).length;
+    });
+
+    // Reset stories guess data
+    dbState.stories.forEach(story => {
+      story.isSolvedBy = [];
+      story.guessedBy = [];
+    });
+
+    // Clear session status, logs, chat, and results
+    dbState.guessLogs = [];
+    dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
+    dbState.playerResults = [];
+    dbState.chat = [];
+    
+    if (roundTimeoutTimer) {
+      clearTimeout(roundTimeoutTimer);
+      roundTimeoutTimer = null;
+    }
+    
+    await saveDB();
+    res.json({ success: true, message: "Sesi berhasil di-restart! Akun pemain dan cerita tetap aman." });
   }));
 
   // ---------- Session endpoints ----------

@@ -9,15 +9,18 @@ interface AdminPanelProps {
   session: Session;
   authToken: string;
   onResetGame: () => Promise<void>;
+  onRestartSession: () => Promise<void>;
   onStartSession: () => Promise<void>;
   onEndSession: () => Promise<void>;
   onStartRound: () => Promise<void>;
   onEndRound: () => Promise<void>;
+  serverOffset?: number;
 }
 
-const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onStartSession, onEndSession, onStartRound, onEndRound }: AdminPanelProps) {
+const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onRestartSession, onStartSession, onEndSession, onStartRound, onEndRound, serverOffset = 0 }: AdminPanelProps) {
   const [loading, setLoading] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmRestartSession, setConfirmRestartSession] = useState(false);
   const [confirmEndSession, setConfirmEndSession] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<User | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,7 +40,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
   }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
 
   const roundRemainingMs = session.currentRound
-    ? getRoundRemainingMs(session.currentRound, now)
+    ? getRoundRemainingMs(session.currentRound, now, serverOffset)
     : 0;
 
   const handleReset = async () => {
@@ -48,6 +51,19 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
       setMessage("Game state berhasil direset total oleh Admin!");
     } catch (error) {
       setMessage(`❌ ${error instanceof Error ? error.message : "Gagal mereset permainan."}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestartSession = async () => {
+    try {
+      setLoading(true);
+      await onRestartSession();
+      setConfirmRestartSession(false);
+      setMessage("Sesi permainan berhasil di-restart! Akun pemain dan semua cerita tetap aman.");
+    } catch (error) {
+      setMessage(`❌ ${error instanceof Error ? error.message : "Gagal me-restart sesi."}`);
     } finally {
       setLoading(false);
     }
@@ -391,38 +407,73 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
           </div>
         </div>
 
-        {/* Reset Game Card */}
-        <div className="bg-[#2b241c]/80 backdrop-blur-md border border-red-500/20 p-5 rounded-2xl shadow-xl md:col-span-2 flex flex-col justify-between">
+        {/* Restart Session Card */}
+        <div className="bg-[#2b241c]/80 backdrop-blur-md border border-cyan-500/25 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Reset Total Data Game</h3>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Restart Sesi Game</h3>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              Menghapus semua cerita teka-teki, membersihkan log tebakan, mengosongkan obrolan chat, dan mengembalikan seluruh skor pemain ke 0.
+              Mulai ulang permainan. Akun pemain dan semua cerita cerita tetap aman. Skor dan chat akan dikosongkan.
             </p>
           </div>
+          <div className="mt-4 flex items-center gap-3">
+            {!confirmRestartSession ? (
+              <button
+                onClick={() => setConfirmRestartSession(true)}
+                className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
+              >
+                Restart Sesi Saja
+              </button>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 bg-cyan-950/20 border border-cyan-900/30 p-2 rounded-xl w-full">
+                <span className="text-[10px] font-bold text-cyan-400 w-full block text-center">Restart sesi game?</span>
+                <button
+                  onClick={handleRestartSession}
+                  className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[10px] px-2 py-1.5 rounded-lg transition-all cursor-pointer"
+                >
+                  Ya
+                </button>
+                <button
+                  onClick={() => setConfirmRestartSession(false)}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-[10px] px-2 py-1.5 rounded-lg transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
 
+        {/* Reset Total Game Card */}
+        <div className="bg-[#2b241c]/80 backdrop-blur-md border border-red-500/25 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Reset Total Game</h3>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+              Hapus seluruh data total. Menghapus akun semua pemain (kecuali admin) beserta seluruh cerita mereka.
+            </p>
+          </div>
           <div className="mt-4 flex items-center gap-3">
             {!confirmReset ? (
               <button
                 id="trigger-reset-btn"
                 onClick={() => setConfirmReset(true)}
-                className="bg-red-600 hover:bg-red-750 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
+                className="w-full bg-red-600 hover:bg-red-750 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
               >
-                Reset Semua Data Game
+                Reset Total Data
               </button>
             ) : (
-              <div className="flex items-center gap-2 bg-red-950/20 border border-red-900/30 p-2 rounded-xl">
-                <span className="text-xs font-bold text-red-400 px-2">Yakin hapus semua?</span>
+              <div className="flex flex-wrap items-center gap-2 bg-red-950/20 border border-red-900/30 p-2 rounded-xl w-full">
+                <span className="text-[10px] font-bold text-red-400 w-full block text-center">Yakin reset total?</span>
                 <button
                   id="confirm-reset-btn"
                   onClick={handleReset}
-                  className="bg-red-600 hover:bg-red-750 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                  className="flex-1 bg-red-600 hover:bg-red-750 text-white font-bold text-[10px] px-2 py-1.5 rounded-lg transition-all cursor-pointer"
                 >
-                  Ya, Reset!
+                  Ya
                 </button>
                 <button
                   id="cancel-reset-btn"
                   onClick={() => setConfirmReset(false)}
-                  className="bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-[10px] px-2 py-1.5 rounded-lg transition-all cursor-pointer"
                 >
                   Batal
                 </button>

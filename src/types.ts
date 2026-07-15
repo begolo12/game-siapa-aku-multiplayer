@@ -63,8 +63,9 @@ export interface SessionRound {
   roundIndex: number; // 0-based
 }
 
-export function getRoundRemainingMs(round: SessionRound, now = Date.now()) {
-  return Math.max(0, ROUND_DURATION_MS - (now - round.startTime));
+export function getRoundRemainingMs(round: SessionRound, now = Date.now(), serverOffset = 0) {
+  const syncedNow = now + serverOffset;
+  return Math.max(0, ROUND_DURATION_MS - (syncedNow - round.startTime));
 }
 
 export interface PlayerAnswer {
@@ -103,4 +104,5 @@ export interface GameState {
   session: Session;
   // For players after session ends
   myResults?: PlayerAnswer[];
+  serverTime?: number;
 }

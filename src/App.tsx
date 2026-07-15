@@ -46,6 +46,10 @@ export default function App() {
   // Game state synced via conditional polling.
   const [gameState, setGameState] = useState<GameState>(emptyGameState);
 
+  // Synchronized server clock offset
+  const [serverOffset, setServerOffset] = useState(0);
+  const serverOffsetRef = useRef(0);
+
   // Polling error tracking
   const [pollError, setPollError] = useState(false);
 
@@ -126,8 +130,12 @@ export default function App() {
       const data = await readResponseData(response) as GameState;
       if (activeUserIdRef.current !== userId) return;
 
-      // An ETag validates the complete response. Do not drop same-length updates.
       setGameState(data);
+      if (data.serverTime) {
+        const offset = data.serverTime - Date.now();
+        setServerOffset(offset);
+        serverOffsetRef.current = offset;
+      }
       setPollError(false);
 
 
@@ -227,7 +235,7 @@ export default function App() {
       }).catch((error) => console.error("Gagal menutup ronde yang berakhir:", error));
     };
 
-    const remainingMs = getRoundRemainingMs(round);
+    const remainingMs = getRoundRemainingMs(round, Date.now(), serverOffsetRef.current);
     if (remainingMs <= 0) {
       expireRound();
       return;
@@ -363,6 +371,17 @@ export default function App() {
     });
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mereset game.");
+    await fetchGameState(currentUser.id, true);
+  }, [currentUser, fetchGameState]);
+
+  const handleRestartSession = useCallback(async () => {
+    if (!currentUser?.isAdmin) return;
+    const response = await fetch("/api/admin/session/restart", {
+      method: "POST",
+      headers: authenticationHeaders(authTokenRef.current)
+    });
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal me-restart sesi.");
     await fetchGameState(currentUser.id, true);
   }, [currentUser, fetchGameState]);
 
@@ -583,6 +602,7 @@ export default function App() {
                     session={gameState.session}
                     onGuessStory={handleGuessStory}
                     onLobbyReady={handleLobbyReady}
+                    serverOffset={serverOffset}
                   />
                 </div>
               )}
@@ -670,11 +690,13 @@ export default function App() {
                   stories={gameState.stories}
                   session={gameState.session}
                   onResetGame={handleResetGame}
+                  onRestartSession={handleRestartSession}
                   authToken={authTokenRef.current ?? ""}
                   onStartSession={handleStartSession}
                   onEndSession={handleEndSession}
                   onStartRound={handleStartRound}
                   onEndRound={handleEndRound}
+                  serverOffset={serverOffset}
                 />
               )}
             </div>}
