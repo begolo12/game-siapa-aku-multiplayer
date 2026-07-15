@@ -381,9 +381,9 @@ export async function createApp() {
 
   app.use(express.json({ limit: "32kb" }));
 
-  // Simple in-memory rate limiter to prevent DOS / connection exhaustion
+  // Limit API calls only; Vite module requests must never receive API throttling.
   const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-  app.use((req, res, next) => {
+  app.use("/api", (req, res, next) => {
     const ip = (req.headers['x-forwarded-for'] as string || '').split(',')[0].trim() || req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
     const limit = req.method === "GET" ? 15 : 5; // 15 req/sec for GET, 5 req/sec for mutations
