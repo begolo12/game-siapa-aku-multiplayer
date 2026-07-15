@@ -431,11 +431,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
               className="border border-slate-850 rounded-xl p-4 hover:bg-slate-900/40 transition-colors"
             >
               <div className="flex items-center justify-between gap-2 border-b border-slate-850 pb-2 mb-3">
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
-                  <span>Kreator: </span>
-                  <span className="text-pink-300 font-bold">{story.username}</span>
-                  <span className="text-slate-600 font-mono">({story.userId})</span>
-                </div>
+                <span className="text-xs font-semibold text-slate-400">Cerita misteri</span>
                 <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
                   <Calendar className="w-3 h-3 text-slate-600" />
                   {formatDate(story.createdAt)}
@@ -470,7 +466,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
         <div className="space-y-2 max-h-72 overflow-y-auto">
           {session.revealedStoryIds.map((storyId, index) => {
             const story = stories.find(item => item.id === storyId);
-            return <div key={storyId} className="flex items-center justify-between rounded-xl bg-slate-950/30 border border-slate-800 px-3 py-2.5 text-xs"><span className="text-slate-400">Ronde {index + 1}</span><span className="font-bold text-white">{story?.username || "Pemain dihapus"}</span><span className="text-emerald-300">{story?.answer || "—"}</span></div>;
+            return <div key={storyId} className="flex items-center justify-between rounded-xl bg-slate-950/30 border border-slate-800 px-3 py-2.5 text-xs"><span className="text-slate-400">Ronde {index + 1}</span><span className="text-emerald-300">{story?.answer || "—"}</span></div>;
           })}
           {session.revealedStoryIds.length === 0 && <p className="text-xs text-slate-500">Belum ada ronde selesai.</p>}
         </div>
