@@ -14,6 +14,7 @@ export default function App() {
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<string>("guess");
+  const [expandedResult, setExpandedResult] = useState<number | null>(null);
 
   // Game state synced via polling
   const [gameState, setGameState] = useState<GameState>({
@@ -472,7 +473,7 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
             
             {/* Left Content Area (Tebak Cerita or Buat Cerita) */}
-            <div className="lg:col-span-8 space-y-6">
+            {!(activeTab === "guess" && gameState.session.phase === "idle" && !gameState.session.sessionId) && <div className="lg:col-span-8 space-y-6">
 
               {/* Active Tab Component */}
               {activeTab === "guess" && (
@@ -534,12 +535,18 @@ export default function App() {
                   {/* Result list */}
                   <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                     {gameState.myResults.map((r, i) => (
-                      <div key={i} className={`border rounded-xl p-3 sm:p-4 text-sm transition-all ${r.isCorrect ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/20 bg-red-950/10'}`}>
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setExpandedResult(expandedResult === i ? null : i)}
+                        aria-expanded={expandedResult === i}
+                        className={`w-full border rounded-xl p-3 text-left sm:p-4 text-sm transition-all cursor-pointer ${r.isCorrect ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/20 bg-red-950/10'}`}
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-[10px] font-bold text-slate-500 font-mono bg-slate-800/50 px-1.5 py-0.5 rounded">#{i + 1}</span>
-                              <p className="text-slate-300 italic text-xs leading-relaxed truncate">"{r.storyPreview}"</p>
+                              <p className={`text-slate-300 italic text-xs leading-relaxed ${expandedResult === i ? 'whitespace-pre-wrap' : 'truncate'}`}>"{r.storyPreview}"</p>
                             </div>
                             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-x-4 text-xs font-mono">
                               <span className="text-slate-400">Jawaban: <span className="text-emerald-400 font-bold">{r.correctAnswer}</span></span>
@@ -550,7 +557,7 @@ export default function App() {
                             {r.isCorrect ? '✓' : '✗'}
                           </span>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -566,10 +573,10 @@ export default function App() {
                   onEndRound={handleEndRound}
                 />
               )}
-            </div>
+            </div>}
 
             {/* Right Sidebar Area (Leaderboard and Chat) */}
-            <div className="lg:col-span-4 space-y-6">
+            <div className={`${activeTab === "guess" && gameState.session.phase === "idle" && !gameState.session.sessionId ? "lg:col-span-12" : "lg:col-span-4"} space-y-6`}>
               {/* Leaderboard Card */}
               <Leaderboard
                 users={gameState.users}

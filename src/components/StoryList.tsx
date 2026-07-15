@@ -146,15 +146,18 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     return true; // "all"
   });
 
+  // Lobby keeps submitted stories private until the admin starts the game.
+  if (session.phase === "idle" && !session.sessionId) {
+    return (
+      <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-5">
+        <p className="text-sm font-bold text-white">Menunggu permainan dimulai</p>
+        <p className="mt-1 text-xs text-slate-400">Cerita misteri akan tampil saat admin memulai permainan.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {session.phase === "idle" && !session.sessionId && (
-        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-5 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-          <div><p className="text-sm font-bold text-white">Lobby permainan</p><p className="text-xs text-slate-400 mt-1">Lengkapi 2 cerita sebelum admin mulai. Pemain yang belum lengkap akan gugur.</p></div>
-          {!currentUser?.isAdmin && <button onClick={toggleReady} disabled={readyLoading || currentUser?.isReady} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${currentUser?.isReady ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-cyan-600 hover:bg-cyan-500 text-white"}`}>{currentUser?.isReady ? "✓ Siap bermain" : readyLoading ? "Memproses..." : "Saya siap"}</button>}
-          {currentUser?.isAdmin && <span className="text-sm font-bold text-cyan-300">{users.filter(user => !user.isAdmin && user.isReady).length}/{users.filter(user => !user.isAdmin).length} siap</span>}
-        </div>
-      )}
       {/* Filters hanya berguna di luar ronde */}
       {session.phase !== "playing" && <div className="bg-[#2b241c]/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-pink-500/20 to-transparent" />

@@ -740,7 +740,7 @@ export async function createApp() {
           storyId: story.id,
           correctAnswer: story.answer,
           playerGuess: guess?.guessText,
-          storyPreview: story.parts[0] + (story.blanks[0] || "") + "…",
+          storyPreview: story.parts.map((part, index) => part + (story.blanks[index] || "")).join(""),
           isCorrect: guess?.isCorrect ?? false
         });
       }
