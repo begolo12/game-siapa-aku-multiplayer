@@ -2,7 +2,8 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import "dotenv/config";
-import { Pool } from "pg";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Pool, PoolClient } from "pg";
 import { User, SubmittedStory, ChatMessage, GuessLog, StoryTemplate, GamePhase, PlayerAnswer, Session } from "./src/types";
 
 // Standard preset templates — semua bertema proyek konstruksi & perusahaan
@@ -58,6 +59,7 @@ const DB_FILE = path.join(process.cwd(), "data-store.json");
 const ROUND_DURATION_MS = 30_000;
 const DATABASE_URL = process.env.DATABASE_URL;
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+const requestDatabase = new AsyncLocalStorage<{ client: PoolClient; saves: Promise<void>[] }>();
 
 const firstName = (value: string) => value.trim().split(/\s+/)[0];
 
@@ -170,10 +172,7 @@ async function initDatabase() {
     return;
   }
   await pool.query(`CREATE TABLE IF NOT EXISTS app_state (id BOOLEAN PRIMARY KEY DEFAULT TRUE, state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), CONSTRAINT one_state CHECK (id))`);
-  const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
-  if (result.rowCount) dbState = result.rows[0].state;
-  normalizeDB();
-  await saveDB();
+  await pool.query(`INSERT INTO app_state (id, state) VALUES (TRUE, $1::jsonb) ON CONFLICT (id) DO NOTHING`, [JSON.stringify(dbState)]);
   console.info("PostgreSQL Neon terhubung.");
 }
 
@@ -182,11 +181,10 @@ async function saveDB() {
     saveFileDB();
     return;
   }
-  try {
-    await pool.query(`INSERT INTO app_state (id, state, updated_at) VALUES (TRUE, $1::jsonb, NOW()) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()`, [JSON.stringify(dbState)]);
-  } catch (error) {
-    console.error("Error saving database state to PostgreSQL:", error);
-  }
+  const context = requestDatabase.getStore();
+  const save = (context?.client || pool).query(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`, [JSON.stringify(dbState)]).then(() => undefined);
+  context?.saves.push(save);
+  await save;
 }
 
 export async function createApp() {
@@ -194,6 +192,40 @@ export async function createApp() {
   const app = express();
 
   app.use(express.json());
+
+  // Serialize each request against the single JSON state row. This prevents
+  // separate Vercel instances from overwriting newer sessions and stories.
+  if (pool) app.use(async (_req, res, next) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE FOR UPDATE");
+      dbState = result.rows[0].state;
+      normalizeDB();
+
+      const originalJson = res.json.bind(res);
+      const saves: Promise<void>[] = [];
+      let settled = false;
+      res.json = ((body: unknown) => {
+        void Promise.all(saves).then(async () => {
+          await client.query("COMMIT");
+          settled = true;
+          client.release();
+          originalJson(body);
+        }).catch(next);
+        return res;
+      }) as typeof res.json;
+
+      res.on("close", () => {
+        if (!settled) void client.query("ROLLBACK").finally(() => client.release());
+      });
+      requestDatabase.run({ client, saves }, next);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release();
+      next(error);
+    }
+  });
 
   // Helper middleware to authenticate from Authorization header or custom simple token (user-id)
   const getRequestUser = (req: express.Request): (User & { password?: string }) | null => {
