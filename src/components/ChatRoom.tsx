@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, memo } from "react";
 import { ChatMessage, User } from "../types";
 import { MessageSquare, Send, Bell, Trophy, ShieldAlert, XCircle } from "lucide-react";
 
@@ -8,17 +8,34 @@ interface ChatRoomProps {
   onSendMessage: (text: string) => Promise<void>;
 }
 
-export default function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomProps) {
+const formatTime = (timestamp: number) => {
+  const d = new Date(timestamp);
+  return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+};
+
+const ChatRoom = memo(function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomProps) {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom on mount only
+  // Scroll to bottom on mount
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, []);
+
+  // Smart scroll to bottom on new messages
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    
+    // Check if user is already near bottom (within 120px) to auto-scroll
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (isNearBottom) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chat.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,17 +46,11 @@ export default function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomP
     try {
       await onSendMessage(inputText.trim());
       setInputText("");
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (error) {
       setSendError(error instanceof Error ? error.message : "Gagal mengirim pesan chat.");
     } finally {
       setIsSending(false);
     }
-  };
-
-  const formatTime = (timestamp: number) => {
-    const d = new Date(timestamp);
-    return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
   };
 
   return (
@@ -163,4 +174,6 @@ export default function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomP
       </form>
     </div>
   );
-}
+});
+
+export default ChatRoom;

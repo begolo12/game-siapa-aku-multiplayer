@@ -66,14 +66,30 @@ const pool = DATABASE_URL
   ? new Pool({
       connectionString: DATABASE_URL,
       // Vercel can scale to many instances; one client per instance prevents connection exhaustion.
-      max: process.env.VERCEL ? 1 : 5,
+      max: process.env.VERCEL ? 3 : 15,
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
+      connectionTimeoutMillis: 10_000,
       allowExitOnIdle: true,
     })
   : null;
+
+if (pool) {
+  pool.on("error", (err) => {
+    console.error("Unexpected error on idle PostgreSQL client", err);
+  });
+}
+
+// Caching variables for high performance
+let cachedDbState: DBState | null = null;
+let cachedUpdatedAt = 0; // ms timestamp
+let lastDbCheckTime = 0; // ms timestamp
+const CACHE_TTL_MS = 1000; // 1 second TTL
+let lastLocalUpdate = Date.now(); // local fallback timestamp
+
+let roundTimeoutTimer: NodeJS.Timeout | null = null;
+
 const scrypt = promisify(scryptCallback);
-const requestDatabase = new AsyncLocalStorage<{ client: PoolClient }>();
+const requestDatabase = new AsyncLocalStorage<{ client: PoolClient; mutationCommitted?: boolean }>();
 
 /** Catches unhandled rejections from async Express route handlers and forwards them to the error middleware. */
 function asyncHandler(fn: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<any>) {
@@ -185,10 +201,11 @@ async function migrateLegacyPasswords() {
 }
 
 // Load fallback database from file when DATABASE_URL is unavailable.
-function loadFileDB() {
+async function loadFileDB() {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const data = fs.readFileSync(DB_FILE, "utf-8");
+    try {
+      await fs.promises.access(DB_FILE);
+      const data = await fs.promises.readFile(DB_FILE, "utf-8");
       const parsed = JSON.parse(data);
       if (parsed) {
         // Merge or replace safely
@@ -203,11 +220,11 @@ function loadFileDB() {
           authTokens: parsed.authTokens || []
         };
         normalizeDB();
-        saveFileDB();
+        await saveFileDB();
       }
-    } else {
+    } catch {
       normalizeDB();
-      saveFileDB();
+      await saveFileDB();
     }
   } catch (error) {
     console.error("Error loading database file, keeping in-memory state:", error);
@@ -215,13 +232,16 @@ function loadFileDB() {
 }
 
 // Save database to file
-function saveFileDB() {
+async function saveFileDB() {
   try {
     const dir = path.dirname(DB_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      await fs.promises.access(dir);
+    } catch {
+      await fs.promises.mkdir(dir, { recursive: true });
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(dbState, null, 2), "utf-8");
+    // Write compact JSON (no pretty-print spaces) to save CPU and space
+    await fs.promises.writeFile(DB_FILE, JSON.stringify(dbState), "utf-8");
   } catch (error) {
     console.error("Error saving database file:", error);
   }
@@ -235,36 +255,51 @@ async function initDatabase() {
     if (process.env.VERCEL) {
       throw new Error("DATABASE_URL is required for Vercel deployments; the file fallback is single-process only.");
     }
-    loadFileDB();
+    await loadFileDB();
     await migrateLegacyPasswords();
-    saveFileDB();
+    await saveFileDB();
+    lastLocalUpdate = Date.now();
     console.warn("DATABASE_URL tidak tersedia; memakai data-store.json.");
     return;
   }
   await pool.query(`CREATE TABLE IF NOT EXISTS app_state (id BOOLEAN PRIMARY KEY DEFAULT TRUE, state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), CONSTRAINT one_state CHECK (id))`);
   await pool.query(`INSERT INTO app_state (id, state) VALUES (TRUE, $1::jsonb) ON CONFLICT (id) DO NOTHING`, [JSON.stringify(dbState)]);
-  const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
+  const result = await pool.query<{ state: DBState; updated_at: string }>("SELECT state, updated_at FROM app_state WHERE id = TRUE");
   dbState = result.rows[0].state;
   const storedState = JSON.stringify(dbState);
   normalizeDB();
   await migrateLegacyPasswords();
   if (JSON.stringify(dbState) !== storedState) {
-    await pool.query(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`, [JSON.stringify(dbState)]);
+    const updateRes = await pool.query<{ updated_at: string }>(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE RETURNING updated_at`, [JSON.stringify(dbState)]);
+    cachedUpdatedAt = new Date(updateRes.rows[0].updated_at).getTime();
+  } else {
+    cachedUpdatedAt = new Date(result.rows[0].updated_at).getTime();
   }
+  cachedDbState = dbState;
+  lastDbCheckTime = Date.now();
   console.info("PostgreSQL Neon terhubung.");
 }
 
 /** Persists the request's serialized state before its response is committed. */
 async function persistState() {
+  const context = requestDatabase.getStore();
+  if (context) {
+    context.mutationCommitted = true;
+  }
   if (!pool) {
-    saveFileDB();
+    await saveFileDB();
+    lastLocalUpdate = Date.now();
     return;
   }
-  const context = requestDatabase.getStore();
-  await (context?.client || pool).query(
-    `UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`,
+  const result = await (context?.client || pool).query(
+    `UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE RETURNING updated_at`,
     [JSON.stringify(dbState)]
   );
+  if (result.rows[0]) {
+    cachedDbState = dbState;
+    cachedUpdatedAt = new Date(result.rows[0].updated_at).getTime();
+    lastDbCheckTime = Date.now();
+  }
 }
 
 async function saveDB() {
@@ -276,11 +311,40 @@ async function saveDB() {
   }
 }
 
-async function saveDBNow() {
+async function getStateForRead(bypassCache = false): Promise<{ state: DBState; updatedAt: number }> {
+  if (!pool) {
+    return { state: dbState, updatedAt: lastLocalUpdate };
+  }
+  const now = Date.now();
+  if (!bypassCache && cachedDbState && (now - lastDbCheckTime < CACHE_TTL_MS)) {
+    return { state: cachedDbState, updatedAt: cachedUpdatedAt };
+  }
   try {
-    await persistState();
+    if (!bypassCache && cachedDbState) {
+      // Fast query: only select updated_at
+      const metaResult = await pool.query<{ updated_at: string }>("SELECT updated_at FROM app_state WHERE id = TRUE");
+      if (metaResult.rows[0]) {
+        const dbUpdatedAt = new Date(metaResult.rows[0].updated_at).getTime();
+        if (dbUpdatedAt === cachedUpdatedAt) {
+          lastDbCheckTime = now;
+          return { state: cachedDbState, updatedAt: cachedUpdatedAt };
+        }
+      }
+    }
+    // Fetch full state if bypassCache is true, cache is empty, or updated_at has changed
+    const result = await pool.query<{ state: DBState; updated_at: string }>(
+      "SELECT state, updated_at FROM app_state WHERE id = TRUE"
+    );
+    if (!result.rows[0]) throw new Error("app_state is missing");
+    cachedDbState = result.rows[0].state;
+    cachedUpdatedAt = new Date(result.rows[0].updated_at).getTime();
+    lastDbCheckTime = now;
+    return { state: cachedDbState, updatedAt: cachedUpdatedAt };
   } catch (error) {
-    console.error("[saveDBNow] Failed to persist state:", error);
+    console.error("Error reading state, falling back to cache if available:", error);
+    if (cachedDbState) {
+      return { state: cachedDbState, updatedAt: cachedUpdatedAt };
+    }
     throw error;
   }
 }
@@ -290,6 +354,35 @@ export async function createApp() {
   const app = express();
 
   app.use(express.json({ limit: "32kb" }));
+
+  // Simple in-memory rate limiter to prevent DOS / connection exhaustion
+  const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+  app.use((req, res, next) => {
+    const ip = (req.headers['x-forwarded-for'] as string || '').split(',')[0].trim() || req.ip || req.socket.remoteAddress || "unknown";
+    const now = Date.now();
+    const limit = req.method === "GET" ? 15 : 5; // 15 req/sec for GET, 5 req/sec for mutations
+    const windowMs = 1000;
+    
+    // Periodically prune old IPs to prevent memory leaks
+    if (rateLimitMap.size > 1000) {
+      for (const [key, value] of rateLimitMap.entries()) {
+        if (now > value.resetAt) rateLimitMap.delete(key);
+      }
+    }
+    
+    let rateData = rateLimitMap.get(ip);
+    if (!rateData || now > rateData.resetAt) {
+      rateData = { count: 1, resetAt: now + windowMs };
+      rateLimitMap.set(ip, rateData);
+    } else {
+      rateData.count++;
+    }
+    
+    if (rateData.count > limit) {
+      return res.status(429).json({ error: "Terlalu banyak permintaan. Silakan coba beberapa saat lagi." });
+    }
+    next();
+  });
 
   // The file fallback has no database row lock; serialize every mutation in this process.
   let fileMutationTail = Promise.resolve();
@@ -318,9 +411,17 @@ export async function createApp() {
   const loadReadState = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (req.method !== "GET" || !pool) return next();
     try {
-      const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
-      if (!result.rows[0]) throw new Error("app_state is missing");
-      res.locals.state = result.rows[0].state;
+      let bypassCache = req.query.bypassCache === "true";
+      if (bypassCache) {
+        // Authenticate the request to make sure it's a valid player before allowing cache bypass
+        const currentUser = getRequestUser(req, dbState);
+        if (!currentUser) {
+          bypassCache = false;
+        }
+      }
+      const { state, updatedAt } = await getStateForRead(bypassCache);
+      res.locals.state = state;
+      res.locals.stateUpdatedAt = updatedAt;
       normalizeState(res.locals.state);
       next();
     } catch (error) {
@@ -336,11 +437,19 @@ export async function createApp() {
       if (req.method === "GET") return next();
       const client = await pool.connect();
       let settled = false;
+      let originalStateBackup = "";
       const finalize = async (commit: boolean) => {
         if (settled) return;
         settled = true;
         try {
-          await client.query(commit ? "COMMIT" : "ROLLBACK");
+          if (commit) {
+            await client.query("COMMIT");
+          } else {
+            await client.query("ROLLBACK");
+            if (originalStateBackup) {
+              dbState = JSON.parse(originalStateBackup);
+            }
+          }
         } finally {
           client.release();
         }
@@ -350,15 +459,21 @@ export async function createApp() {
         const result = await client.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE FOR UPDATE");
         if (!result.rows[0]) throw new Error("app_state is missing");
         dbState = result.rows[0].state;
+        originalStateBackup = JSON.stringify(dbState);
         normalizeDB();
 
         const originalEnd = res.end.bind(res);
         res.end = ((...args: Parameters<express.Response["end"]>) => {
-          void finalize(true).then(() => originalEnd(...args)).catch(next);
+          const isSuccess = res.statusCode < 400;
+          void finalize(isSuccess).then(() => originalEnd(...args)).catch(next);
           return res;
         }) as express.Response["end"];
         res.once("close", () => {
-          if (!settled) void finalize(false);
+          if (!settled) {
+            const context = requestDatabase.getStore();
+            const commitOnClose = context?.mutationCommitted === true;
+            void finalize(commitOnClose);
+          }
         });
         requestDatabase.run({ client }, () => next());
       } catch (error) {
@@ -474,10 +589,20 @@ export async function createApp() {
   // GET polling is served from an independent PostgreSQL snapshot and never mutates global state.
   app.get("/api/game/state", (req, res) => {
     const state = (res.locals.state as DBState | undefined) || dbState;
+    const updatedAt = (res.locals.stateUpdatedAt as number | undefined) || lastLocalUpdate;
     const currentUser = getRequestUser(req, state);
+
+    // Compute a fast ETag using updatedAt and currentUser ID
+    const etagBase = `${updatedAt}-${currentUser ? currentUser.id : "guest"}`;
+    const etag = `"${createHash("sha256").update(etagBase).digest("base64url")}"`;
+    res.set("ETag", etag);
+    res.set("Cache-Control", "no-store");
+    if (req.headers["if-none-match"] === etag) return res.status(304).end();
+
     const usersSafe = state.users.map(({ password: _, passwordHash: __, ...user }) => user);
     const storiesSafe = state.stories.map(story => {
       const canSeeAnswer = currentUser && (
+        currentUser.isAdmin ||
         currentUser.id === story.userId ||
         story.isSolvedBy.includes(currentUser.id) ||
         state.session.revealedStoryIds.includes(story.id)
@@ -501,10 +626,6 @@ export async function createApp() {
         ? state.playerResults.filter(result => result.userId === currentUser.id)
         : undefined
     };
-    const etag = `"${createHash("sha256").update(JSON.stringify(body)).digest("base64url")}"`;
-    res.set("ETag", etag);
-    res.set("Cache-Control", "no-store");
-    if (req.headers["if-none-match"] === etag) return res.status(304).end();
     res.json(body);
   });
 
@@ -629,7 +750,6 @@ export async function createApp() {
       // Time limit check
       const elapsed = Date.now() - dbState.session.currentRound.startTime;
       if (elapsed >= ROUND_DURATION_MS) {
-        await endRound();
         return res.status(408).json({ error: "Waktu habis! Ronde sudah berakhir." });
       }
     } else {
@@ -639,7 +759,8 @@ export async function createApp() {
     if (story.userId === currentUser.id) {
       return res.status(403).json({ error: "Anda tidak dapat menebak cerita sendiri." });
     }
-    if (dbState.guessLogs.some(log => log.userId === currentUser.id && log.storyId === storyId && dbState.session.mysteryIds.includes(log.storyId))) {
+    if (!story.guessedBy) story.guessedBy = [];
+    if (story.guessedBy.includes(currentUser.id)) {
       return res.status(400).json({ error: "Anda sudah memakai satu kesempatan pada ronde ini." });
     }
 
@@ -662,8 +783,8 @@ export async function createApp() {
     };
 
     dbState.guessLogs.unshift(log); // newest first
-    if (dbState.guessLogs.length > 100) {
-      dbState.guessLogs = dbState.guessLogs.slice(0, 100);
+    if (dbState.guessLogs.length > 500) {
+      dbState.guessLogs = dbState.guessLogs.slice(0, 500);
     }
 
     const awardedPoints = isCorrect
@@ -679,6 +800,11 @@ export async function createApp() {
       isCorrect,
       awardedPoints
     });
+
+    // Record the guess attempt to prevent duplicate guesses
+    if (!story.guessedBy.includes(currentUser.id)) {
+      story.guessedBy.push(currentUser.id);
+    }
 
     if (isCorrect) {
       // Add user to solved list
@@ -715,8 +841,8 @@ export async function createApp() {
     }
 
     // Keep chat within limit
-    if (dbState.chat.length > 200) {
-      dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
+    if (dbState.chat.length > 500) {
+      dbState.chat = dbState.chat.slice(dbState.chat.length - 500);
     }
 
     await saveDB();
@@ -846,7 +972,12 @@ export async function createApp() {
     dbState.chat = [];
     dbState.users.forEach(user => { user.isReady = false; });
     dbState.authTokens = (dbState.authTokens || []).filter(token => dbState.users.some(user => user.id === token.userId));
-    await saveDBNow();
+    
+    if (roundTimeoutTimer) {
+      clearTimeout(roundTimeoutTimer);
+      roundTimeoutTimer = null;
+    }
+    await saveDB();
     res.json({ success: true, message: "Semua data berhasil direset (users, stories, sessions, chat)." });
   }));
 
@@ -910,7 +1041,8 @@ export async function createApp() {
       timestamp: Date.now()
     });
 
-    await saveDBNow();
+    scheduleServerRoundExpiry();
+    await saveDB();
     res.json({ success: true, session: dbState.session });
   }));
 
@@ -941,7 +1073,12 @@ export async function createApp() {
     dbState.session.phase = "ended";
     dbState.session.endedAt = Date.now();
     dbState.session.currentRound = null;
-    await saveDBNow();
+    
+    if (roundTimeoutTimer) {
+      clearTimeout(roundTimeoutTimer);
+      roundTimeoutTimer = null;
+    }
+    await saveDB();
   }
 
   // Modified reset endpoint — also clears session
@@ -986,7 +1123,8 @@ export async function createApp() {
       timestamp: Date.now()
     });
 
-    await saveDBNow();
+    scheduleServerRoundExpiry();
+    await saveDB();
     res.json({ success: true, session: roundSafeSession() });
   }));
 
@@ -1020,13 +1158,19 @@ export async function createApp() {
 
   /** Closes the current round, advances roundIndex, reveals answer in chat */
   async function endRound() {
-    const round = dbState.session.currentRound!;
-    const story = dbState.stories.find(s => s.id === round.storyId);
+    const round = dbState.session.currentRound;
+    if (!round) return;
+
+    if (roundTimeoutTimer) {
+      clearTimeout(roundTimeoutTimer);
+      roundTimeoutTimer = null;
+    }
 
     dbState.session.phase = "idle";
     dbState.session.roundIndex += 1;
     dbState.session.currentRound = null;
 
+    const story = dbState.stories.find(s => s.id === round.storyId);
     if (story) {
       const storyPreview = story.parts.map((part, index) => part + (story.blanks[index] || "")).join("");
       dbState.users.filter(user => !user.isAdmin && user.id !== story.userId).forEach(user => {
@@ -1063,10 +1207,16 @@ export async function createApp() {
       dbState.session.phase = "ended";
       dbState.session.endedAt = Date.now();
     }
-    if (dbState.chat.length > 200) {
-      dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
+    
+    // Trim arrays to prevent memory leaks
+    if (dbState.chat.length > 500) {
+      dbState.chat = dbState.chat.slice(dbState.chat.length - 500);
     }
-    await saveDBNow();
+    if (dbState.playerResults.length > 2000) {
+      dbState.playerResults = dbState.playerResults.slice(dbState.playerResults.length - 2000);
+    }
+    
+    await saveDB();
   }
 
   /** Returns session without exposing raw startTime (uses remainingMs) */
@@ -1081,6 +1231,95 @@ export async function createApp() {
     }
     return s;
   }
+
+  function scheduleServerRoundExpiry() {
+    if (roundTimeoutTimer) clearTimeout(roundTimeoutTimer);
+    
+    roundTimeoutTimer = setTimeout(async () => {
+      try {
+        if (pool) {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            const result = await client.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE FOR UPDATE");
+            if (result.rows[0]) {
+              dbState = result.rows[0].state;
+              normalizeDB();
+              if (dbState.session.phase === "playing" && dbState.session.currentRound) {
+                const elapsed = Date.now() - dbState.session.currentRound.startTime;
+                if (elapsed >= ROUND_DURATION_MS) {
+                  await endRound();
+                }
+              }
+            }
+            await client.query("COMMIT");
+          } catch (err) {
+            await client.query("ROLLBACK");
+            console.error("[server-round-expiry-error]", err);
+          } finally {
+            client.release();
+          }
+        } else {
+          // Local mode fallback
+          if (dbState.session.phase === "playing" && dbState.session.currentRound) {
+            const elapsed = Date.now() - dbState.session.currentRound.startTime;
+            if (elapsed >= ROUND_DURATION_MS) {
+              await endRound();
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error ending round automatically on server:", error);
+      }
+    }, ROUND_DURATION_MS + 2000);
+  }
+
+  // Background auth tokens cleanup check every 10 minutes
+  setInterval(async () => {
+    try {
+      const now = Date.now();
+      if (pool) {
+        const { state } = await getStateForRead(true);
+        const activeTokens = (state.authTokens || []).filter(t => t.expiresAt > now);
+        if (activeTokens.length !== (state.authTokens || []).length) {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            const result = await client.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE FOR UPDATE");
+            if (result.rows[0]) {
+              const currentDbState = result.rows[0].state;
+              const originalLength = (currentDbState.authTokens || []).length;
+              currentDbState.authTokens = (currentDbState.authTokens || []).filter(t => t.expiresAt > now);
+              if (currentDbState.authTokens.length !== originalLength) {
+                await client.query(
+                  `UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`,
+                  [JSON.stringify(currentDbState)]
+                );
+                dbState = currentDbState;
+                cachedDbState = currentDbState;
+                lastLocalUpdate = Date.now();
+              }
+            }
+            await client.query("COMMIT");
+          } catch (err) {
+            await client.query("ROLLBACK");
+            console.error("Error during background token cleanup:", err);
+          } finally {
+            client.release();
+          }
+        }
+      } else {
+        const originalLength = (dbState.authTokens || []).length;
+        dbState.authTokens = (dbState.authTokens || []).filter(t => t.expiresAt > now);
+        if (dbState.authTokens.length !== originalLength) {
+          await saveFileDB();
+          lastLocalUpdate = Date.now();
+        }
+      }
+    } catch (error) {
+      console.error("Error in authTokens background cleanup:", error);
+    }
+  }, 10 * 60 * 1000);
 
   // ------------------------- Global Error Handler -------------------------
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

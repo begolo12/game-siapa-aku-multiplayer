@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import { StoryTemplate, SubmittedStory, User } from "../types";
 import { ChevronRight, ChevronLeft, Send, Sparkles, BookOpen, AlertCircle, CheckCircle2, Lock, Shield } from "lucide-react";
 
@@ -11,7 +11,9 @@ interface StoryCreatorProps {
   userStories: SubmittedStory[];
 }
 
-export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory, userStoryCount, userTemplateIds, userStories }: StoryCreatorProps) {
+let cachedTemplates: StoryTemplate[] | null = null;
+
+const StoryCreator = memo(function StoryCreator({ currentUser, onSubmitStory, onUpdateStory, userStoryCount, userTemplateIds, userStories }: StoryCreatorProps) {
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templateBlanks, setTemplateBlanks] = useState<Record<string, string[]>>({});
@@ -24,6 +26,17 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
 
   // Fetch templates from API on mount.
   useEffect(() => {
+    if (cachedTemplates) {
+      setTemplates(cachedTemplates);
+      const blanksMap: Record<string, string[]> = {};
+      cachedTemplates.forEach((template) => {
+        blanksMap[template.id] = Array(template.placeholders.length).fill("");
+      });
+      setTemplateBlanks(blanksMap);
+      setTemplatesLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
 
     fetch("/api/templates", { signal: controller.signal })
@@ -31,6 +44,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
         if (!response.ok) throw new Error("Template cerita tidak dapat dimuat.");
         const data = await response.json() as StoryTemplate[];
         if (!Array.isArray(data) || data.length === 0) throw new Error("Tidak ada template cerita yang tersedia.");
+        cachedTemplates = data;
         setTemplates(data);
         const blanksMap: Record<string, string[]> = {};
         data.forEach((template) => {
@@ -348,4 +362,6 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
       )}
     </div>
   );
-}
+});
+
+export default StoryCreator;

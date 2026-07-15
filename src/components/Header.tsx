@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { User } from "../types";
 import { LogOut, Shield, Trophy, BookOpen } from "lucide-react";
 
@@ -7,7 +7,7 @@ interface HeaderProps {
   onLogout: () => void;
 }
 
-export default function Header({ currentUser, onLogout }: HeaderProps) {
+const Header = memo(function Header({ currentUser, onLogout }: HeaderProps) {
   return (
     <header className="bg-[#2b241c]/90 backdrop-blur-md border-b border-slate-900 sticky top-0 z-40">
       <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-pink-500/30 to-transparent" />
@@ -51,4 +51,6 @@ export default function Header({ currentUser, onLogout }: HeaderProps) {
       </div>
     </header>
   );
-}
+});
+
+export default Header;

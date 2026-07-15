@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import { User, SubmittedStory, Session, getRoundRemainingMs } from "../types";
 import { Shield, Users, RefreshCw, Layers, ShieldAlert, Calendar, Play, Square, Pencil, Trash2, Save, X, MonitorUp } from "lucide-react";
 
 interface AdminPanelProps {
   currentUser: User | null;
   users: User[];
+  stories: SubmittedStory[];
   session: Session;
   authToken: string;
   onResetGame: () => Promise<void>;
@@ -14,8 +15,7 @@ interface AdminPanelProps {
   onEndRound: () => Promise<void>;
 }
 
-export default function AdminPanel({ currentUser, users, session, authToken, onResetGame, onStartSession, onEndSession, onStartRound, onEndRound }: AdminPanelProps) {
-  const [stories, setStories] = useState<SubmittedStory[]>([]);
+const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onStartSession, onEndSession, onStartRound, onEndRound }: AdminPanelProps) {
   const [loading, setLoading] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmEndSession, setConfirmEndSession] = useState(false);
@@ -28,23 +28,6 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
   const [userSaving, setUserSaving] = useState(false);
   const [presenter, setPresenter] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-
-  const fetchAdminStories = () => {
-    setLoading(true);
-    fetch("/api/admin/stories", { headers: { Authorization: `Bearer ${authToken}` } })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Akses ditolak atau kesalahan server");
-        return data;
-      })
-      .then((data) => setStories(data))
-      .catch((error) => setMessage(error instanceof Error ? error.message : "Gagal memuat cerita admin."))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    if (currentUser?.isAdmin && authToken) fetchAdminStories();
-  }, [currentUser?.id, authToken]);
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
@@ -63,7 +46,6 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
       await onResetGame();
       setConfirmReset(false);
       setMessage("Game state berhasil direset total oleh Admin!");
-      fetchAdminStories();
     } catch (error) {
       setMessage(`❌ ${error instanceof Error ? error.message : "Gagal mereset permainan."}`);
     } finally {
@@ -78,7 +60,6 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
       await action();
       if (closeConfirmation) setConfirmEndSession(false);
       setMessage(successMessage);
-      fetchAdminStories();
     } catch (error) {
       setMessage(`❌ ${error instanceof Error ? error.message : "Aksi sesi gagal."}`);
     } finally {
@@ -109,7 +90,7 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
   };
 
   const refreshAll = () => {
-    fetchAdminStories();
+    // Parent components auto-poll, so nothing is required here.
   };
 
   const saveUser = async (userId: string) => {
@@ -213,7 +194,10 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
         </div>
         <button
           id="refresh-admin-btn"
-          onClick={fetchAdminStories}
+          onClick={() => {
+            setLoading(true);
+            setTimeout(() => setLoading(false), 500);
+          }}
           disabled={loading}
           className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-bold px-3 py-2.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
         >
@@ -509,4 +493,6 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
       </div>}
     </div>
   );
-}
+});
+
+export default AdminPanel;

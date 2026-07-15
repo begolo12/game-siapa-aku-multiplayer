@@ -24,8 +24,9 @@ export interface SubmittedStory {
   templateId: string;
   parts: string[];       // The original template parts
   blanks: string[];      // 8 filled values
-  answer: string;        // The secret answer (Name/Character)
+  answer?: string;       // The secret answer (Name/Character), optional for client-side security
   isSolvedBy: string[];  // Array of user IDs who guessed it correctly
+  guessedBy?: string[];  // Array of user IDs who have attempted to guess this story
   createdAt: number;
 }
 
@@ -96,7 +97,7 @@ export interface Session {
 
 export interface GameState {
   users: User[];
-  stories: Omit<SubmittedStory, 'answer'>[]; // Server strips answer for security before sending to clients, except for admin!
+  stories: SubmittedStory[];
   chat: ChatMessage[];
   guessLogs: GuessLog[];
   session: Session;

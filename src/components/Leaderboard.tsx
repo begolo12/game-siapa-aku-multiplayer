@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import { User } from "../types";
 import { Trophy, Medal, Award, CheckCircle2, FileText, Star } from "lucide-react";
 
@@ -7,9 +7,11 @@ interface LeaderboardProps {
   currentUserId?: string;
 }
 
-export default function Leaderboard({ users, currentUserId }: LeaderboardProps) {
+const Leaderboard = memo(function Leaderboard({ users, currentUserId }: LeaderboardProps) {
   // Sort users by score descending
-  const sortedUsers = [...users].sort((a, b) => b.score - a.score);
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => b.score - a.score);
+  }, [users]);
 
   return (
     <div className="bg-[#2b241c]/80 backdrop-blur-md rounded-2xl border border-slate-800/80 p-5 shadow-xl relative overflow-hidden">
@@ -101,4 +103,6 @@ export default function Leaderboard({ users, currentUserId }: LeaderboardProps) 
       </div>
     </div>
   );
-}
+});
+
+export default Leaderboard;

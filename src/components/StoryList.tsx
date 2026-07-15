@@ -1,8 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo, useMemo, useCallback } from "react";
 import { SubmittedStory, User, Session, getRoundRemainingMs } from "../types";
 import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
 
 const ROUND_SECONDS = 30;
+
+const formatDate = (timestamp: number) => {
+  const d = new Date(timestamp);
+  return d.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+};
 
 interface StoryListProps {
   stories: SubmittedStory[];
@@ -13,7 +23,7 @@ interface StoryListProps {
   onLobbyReady: () => Promise<void>;
 }
 
-export default function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady }: StoryListProps) {
+const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady }: StoryListProps) {
   const [guesses, setGuesses] = useState<{ [storyId: string]: string }>({});
   const [feedback, setFeedback] = useState<{ [storyId: string]: { isCorrect: boolean; message: string } }>({});
   const [submitting, setSubmitting] = useState<{ [storyId: string]: boolean }>({});
@@ -23,17 +33,19 @@ export default function StoryList({ stories, currentUser, users, session, onGues
   const [lobbyError, setLobbyError] = useState<string | null>(null);
 
   // Candidate usernames for the autocomplete, including the guesser.
-  const candidateUsernames = users
-    .map((u) => u.username.trim().split(/\s+/)[0])
-    .filter((name, index, names) => names.indexOf(name) === index);
+  const candidateUsernames = useMemo(() => {
+    return users
+      .map((u) => u.username.trim().split(/\s+/)[0])
+      .filter((name, index, names) => names.indexOf(name) === index);
+  }, [users]);
 
-  const getSuggestions = (query: string): string[] => {
+  const getSuggestions = useCallback((query: string): string[] => {
     const q = query.trim().toLowerCase();
     const matched = q
       ? candidateUsernames.filter((n) => n.toLowerCase().startsWith(q))
       : candidateUsernames;
     return matched.slice(0, 5);
-  };
+  }, [candidateUsernames]);
 
   // Countdown timer for round
   // Countdown stays accurate from the round's immutable start timestamp.
@@ -51,7 +63,12 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     if (session.phase !== "playing" || !session.currentRound) return;
     document.title = `⏱️ Ronde ${session.currentRound.roundIndex + 1} — Siapa Aku?`;
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(`Ronde ${session.currentRound.roundIndex + 1} dimulai`, { body: "Cerita baru sudah tampil. Pilih satu jawaban sebelum waktu habis." });
+      const n = new Notification(`Ronde ${session.currentRound.roundIndex + 1} dimulai`, { body: "Cerita baru sudah tampil. Pilih satu jawaban sebelum waktu habis." });
+      const t = setTimeout(() => n.close(), 5000);
+      return () => {
+        clearTimeout(t);
+        n.close();
+      };
     }
     return () => { document.title = "Siapa Aku? - Multiplayer Detective Game"; };
   }, [session.phase, session.currentRound?.storyId]);
@@ -120,42 +137,36 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    const d = new Date(timestamp);
-    return d.toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-  };
-
   // Filtering logic + session scope
-  const visibleStories = session.phase === "playing" && session.currentRound
-    ? stories.filter(s => s.id === session.currentRound!.storyId)
-    : stories;
+  const visibleStories = useMemo(() => {
+    return session.phase === "playing" && session.currentRound
+      ? stories.filter(s => s.id === session.currentRound!.storyId)
+      : stories;
+  }, [stories, session.phase, session.currentRound?.storyId]);
 
-  const filteredStories = visibleStories.filter((story) => {
-    const isMine = story.userId === currentUser?.id;
-    const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
+  const filteredStories = useMemo(() => {
+    return visibleStories.filter((story) => {
+      const isMine = story.userId === currentUser?.id;
+      const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
 
-    // During a live round, always render its selected mystery—even for its owner.
-    if (session.phase === "playing") return true;
+      // During a live round, always render its selected mystery—even for its owner.
+      if (session.phase === "playing") return true;
 
-    if (filterType === "playable") {
-      // Stories from others that I have not solved yet
-      return !isMine && !isSolvedByMe;
-    }
-    if (filterType === "solved") {
-      // Stories solved by me
-      return isSolvedByMe;
-    }
-    if (filterType === "mine") {
-      // Stories created by me
-      return isMine;
-    }
-    return true; // "all"
-  });
+      if (filterType === "playable") {
+        // Stories from others that I have not solved yet
+        return !isMine && !isSolvedByMe;
+      }
+      if (filterType === "solved") {
+        // Stories solved by me
+        return isSolvedByMe;
+      }
+      if (filterType === "mine") {
+        // Stories created by me
+        return isMine;
+      }
+      return true; // "all"
+    });
+  }, [visibleStories, currentUser?.id, filterType, session.phase]);
 
   // Lobby keeps submitted stories private until the admin starts the game.
   if (session.phase === "idle" && !session.sessionId) {
@@ -455,4 +466,6 @@ export default function StoryList({ stories, currentUser, users, session, onGues
       </div>
     </div>
   );
-}
+});
+
+export default StoryList;

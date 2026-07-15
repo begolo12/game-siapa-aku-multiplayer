@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameState, SubmittedStory, User, getRoundRemainingMs } from "./types";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
@@ -6,6 +6,7 @@ import ChatRoom from "./components/ChatRoom";
 import StoryCreator from "./components/StoryCreator";
 import StoryList from "./components/StoryList";
 import AdminPanel from "./components/AdminPanel";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { LogIn, UserPlus, AlertCircle, Gamepad2, Info } from "lucide-react";
 
 const emptyGameState = (): GameState => ({
@@ -44,6 +45,9 @@ export default function App() {
 
   // Game state synced via conditional polling.
   const [gameState, setGameState] = useState<GameState>(emptyGameState);
+
+  // Polling error tracking
+  const [pollError, setPollError] = useState(false);
 
   // Auth inputs
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -97,8 +101,8 @@ export default function App() {
     try {
       const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
       if (etagRef.current) headers["If-None-Match"] = etagRef.current;
-
-      const response = await fetch("/api/game/state", { headers, signal: controller.signal });
+      const url = force ? "/api/game/state?bypassCache=true" : "/api/game/state";
+      const response = await fetch(url, { headers, signal: controller.signal });
       if (activeUserIdRef.current !== userId) return;
       if (response.status === 401) {
         authTokenRef.current = null;
@@ -108,7 +112,10 @@ export default function App() {
         setGameState(emptyGameState());
         return;
       }
-      if (response.status === 304) return;
+      if (response.status === 304) {
+        setPollError(false);
+        return;
+      }
       if (!response.ok) {
         const data = await readResponseData(response);
         throw new Error(data.error || "Gagal memuat status permainan.");
@@ -121,6 +128,7 @@ export default function App() {
 
       // An ETag validates the complete response. Do not drop same-length updates.
       setGameState(data);
+      setPollError(false);
 
 
       const matched = data.users.find((user) => user.id === userId);
@@ -146,6 +154,7 @@ export default function App() {
     } catch (error) {
       if ((error as DOMException).name !== "AbortError") {
         console.error("Kesalahan polling game state:", error);
+        setPollError(true);
       }
     } finally {
       if (pollAbortRef.current === controller) {
@@ -273,7 +282,7 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     const token = authTokenRef.current;
     if (token) {
       void fetch("/api/auth/logout", { method: "POST", headers: authenticationHeaders(token) });
@@ -284,9 +293,9 @@ export default function App() {
     localStorage.removeItem("whoami_user");
     setCurrentUser(null);
     setActiveTab("guess");
-  };
+  }, []);
 
-  const handleStorySubmit = async (templateId: string, blanks: string[], answer: string) => {
+  const handleStorySubmit = useCallback(async (templateId: string, blanks: string[], answer: string) => {
     if (!currentUser) return;
     const response = await fetch("/api/game/story", {
       method: "POST",
@@ -296,9 +305,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mempublikasikan cerita.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleStoryUpdate = async (storyId: string, blanks: string[]) => {
+  const handleStoryUpdate = useCallback(async (storyId: string, blanks: string[]) => {
     if (!currentUser) return;
     const response = await fetch(`/api/game/story/${storyId}`, {
       method: "PUT",
@@ -308,9 +317,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengubah cerita.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleGuessStory = async (storyId: string, guessText: string) => {
+  const handleGuessStory = useCallback(async (storyId: string, guessText: string) => {
     if (!currentUser) throw new Error("Silakan masuk terlebih dahulu.");
     const response = await fetch("/api/game/guess", {
       method: "POST",
@@ -321,9 +330,9 @@ export default function App() {
     if (!response.ok) throw new Error(data.error || "Gagal mengirim tebakan.");
     await fetchGameState(currentUser.id, true);
     return data;
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleLobbyReady = async () => {
+  const handleLobbyReady = useCallback(async () => {
     if (!currentUser) return;
     const response = await fetch("/api/game/lobby/ready", {
       method: "POST",
@@ -332,9 +341,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengubah status siap.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = useCallback(async (text: string) => {
     if (!currentUser) return;
     const response = await fetch("/api/chat", {
       method: "POST",
@@ -344,9 +353,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengirim pesan chat.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleResetGame = async () => {
+  const handleResetGame = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
     const response = await fetch("/api/admin/reset", {
       method: "POST",
@@ -355,9 +364,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mereset game.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleStartSession = async () => {
+  const handleStartSession = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
     const response = await fetch("/api/admin/session/start", {
       method: "POST",
@@ -366,9 +375,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal memulai sesi.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleEndSession = async () => {
+  const handleEndSession = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
     const response = await fetch("/api/admin/session/end", {
       method: "POST",
@@ -377,9 +386,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengakhiri sesi.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleStartRound = async () => {
+  const handleStartRound = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
     const response = await fetch("/api/admin/round/start", {
       method: "POST",
@@ -388,9 +397,9 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal memulai ronde.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
 
-  const handleEndRound = async () => {
+  const handleEndRound = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
     const response = await fetch("/api/admin/round/end", {
       method: "POST",
@@ -399,10 +408,20 @@ export default function App() {
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengakhiri ronde.");
     await fetchGameState(currentUser.id, true);
-  };
+  }, [currentUser, fetchGameState]);
+
+  const currentUserStories = useMemo(() => {
+    if (!currentUser) return [];
+    return gameState.stories.filter(s => s.userId === currentUser.id);
+  }, [gameState.stories, currentUser]);
+
+  const userStoryCount = useMemo(() => currentUserStories.length, [currentUserStories]);
+  const userTemplateIds = useMemo(() => currentUserStories.map(s => s.templateId), [currentUserStories]);
+  const userStories = useMemo(() => currentUserStories as SubmittedStory[], [currentUserStories]);
 
   return (
-    <div className="min-h-screen bg-[#211b15] flex flex-col font-sans antialiased text-slate-200 selection:bg-pink-500 selection:text-white relative">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-[#211b15] flex flex-col font-sans antialiased text-slate-200 selection:bg-pink-500 selection:text-white relative">
 
       {/* Top Header Navigation */}
       <Header
@@ -412,6 +431,12 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 sm:pb-24 relative z-10">
+        {pollError && (
+          <div className="bg-rose-950/40 border border-rose-500/20 text-rose-300 px-4 py-3 rounded-2xl mb-6 text-xs font-semibold flex items-center gap-2 animate-pulse" role="alert">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 animate-spin" style={{ animationDuration: '3s' }} />
+            <span>Koneksi ke server terganggu. Sedang mencoba menghubungkan kembali...</span>
+          </div>
+        )}
         {!currentUser ? (
           /* AUTHENTICATION SCREEN */
           <div className="max-w-md mx-auto my-6 sm:my-12 animate-fadeIn relative">
@@ -552,7 +577,7 @@ export default function App() {
                     <p className="text-sm text-slate-400">Baca cerita aktif, lalu pilih nama depan pemain melalui autocomplete.</p>
                   </div>
                   <StoryList
-                    stories={gameState.stories as any}
+                    stories={gameState.stories}
                     currentUser={currentUser}
                     users={gameState.users}
                     session={gameState.session}
@@ -567,9 +592,9 @@ export default function App() {
                   currentUser={currentUser}
                   onSubmitStory={handleStorySubmit}
                   onUpdateStory={handleStoryUpdate}
-                  userStoryCount={gameState.stories.filter(s => s.userId === currentUser.id).length}
-                  userTemplateIds={gameState.stories.filter(s => s.userId === currentUser.id).map(s => s.templateId)}
-                  userStories={gameState.stories.filter(s => s.userId === currentUser.id) as SubmittedStory[]}
+                  userStoryCount={userStoryCount}
+                  userTemplateIds={userTemplateIds}
+                  userStories={userStories}
                 />
               )}
 
@@ -605,7 +630,7 @@ export default function App() {
                   <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                     {gameState.myResults.map((r, i) => (
                       <article
-                        key={i}
+                        key={r.storyId}
                         className={`w-full border rounded-xl p-3 text-left sm:p-4 text-sm ${r.isCorrect ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/20 bg-red-950/10'}`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -642,6 +667,7 @@ export default function App() {
                 <AdminPanel
                   currentUser={currentUser}
                   users={gameState.users}
+                  stories={gameState.stories}
                   session={gameState.session}
                   onResetGame={handleResetGame}
                   authToken={authTokenRef.current ?? ""}
@@ -750,5 +776,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
