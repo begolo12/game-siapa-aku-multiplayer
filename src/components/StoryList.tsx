@@ -142,8 +142,10 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
   const visibleStories = useMemo(() => {
     return session.phase === "playing" && session.currentRound
       ? stories.filter(s => s.id === session.currentRound!.storyId)
+      : session.lastRevealed
+      ? stories.filter(s => s.id === session.lastRevealed!.storyId)
       : stories;
-  }, [stories, session.phase, session.currentRound?.storyId]);
+  }, [stories, session.phase, session.currentRound?.storyId, session.lastRevealed?.storyId]);
 
   const filteredStories = useMemo(() => {
     return visibleStories.filter((story) => {
@@ -151,7 +153,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
 
       // During a live round, always render its selected mystery—even for its owner.
-      if (session.phase === "playing") return true;
+      if (session.phase === "playing" || session.lastRevealed?.storyId === story.id) return true;
 
       if (filterType === "playable") {
         // Stories from others that I have not solved yet
@@ -167,7 +169,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       }
       return true; // "all"
     });
-  }, [visibleStories, currentUser?.id, filterType, session.phase]);
+  }, [visibleStories, currentUser?.id, filterType, session.phase, session.lastRevealed?.storyId]);
 
   // Lobby keeps submitted stories private until the admin starts the game.
   if (session.phase === "idle" && !session.sessionId) {
@@ -201,7 +203,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
   return (
     <div className="space-y-6">
       {/* Filters hanya berguna di luar ronde */}
-      {session.phase !== "playing" && <div className="bg-[#2b241c]/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn relative overflow-hidden">
+      {session.phase !== "playing" && !session.lastRevealed && <div className="bg-[#2b241c]/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-pink-500/20 to-transparent" />
         <div className="flex items-center gap-2">
           <div className="bg-pink-500/10 p-1.5 rounded-lg border border-pink-500/20">
@@ -258,26 +260,6 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
         </div>
       </div>}
 
-      {/* Reveal card after round ends */}
-      {session.phase === "idle" && session.lastRevealed && (
-        <div className="bg-gradient-to-r from-emerald-500/10 via-teal-600/10 to-cyan-500/10 border border-emerald-500/30 p-5 rounded-2xl animate-slideUp relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent pointer-events-none" />
-          <div className="flex items-center gap-2 mb-3 relative">
-            <div className="bg-emerald-500/15 p-1.5 rounded-lg border border-emerald-500/25">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            </div>
-            <span className="text-sm font-bold text-emerald-300 uppercase tracking-wider">Jawaban Terungkap!</span>
-          </div>
-          <p className="text-slate-300 italic text-xs leading-relaxed mb-3 relative">"{session.lastRevealed.storyPreview}"</p>
-          <div className="flex items-center gap-2 relative">
-            <span className="text-xs text-slate-400 font-mono">Jawaban:</span>
-            <span className="text-sm font-extrabold text-emerald-300 bg-emerald-500/15 border border-emerald-500/25 px-3 py-1 rounded-lg">
-              {session.lastRevealed.answer}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Countdown banner for active round */}
       {session.phase === "playing" && session.currentRound && (
         <div className="bg-gradient-to-r from-pink-500/10 via-purple-600/10 to-indigo-500/10 border border-pink-500/20 p-4 rounded-2xl flex items-center justify-between animate-glowPulse relative overflow-hidden">
@@ -304,6 +286,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       <div className="grid grid-cols-1 gap-6">
         {filteredStories.map((story) => {
           // Active mystery owner IDs are intentionally withheld; the server rejects self-guesses.
+          const isRoundResult = session.phase === "idle" && session.lastRevealed?.storyId === story.id;
           const isMine = session.phase !== "playing" && story.userId === currentUser?.id;
           const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
           const isStorySolvedByOther = story.isSolvedBy.length > 0;
@@ -361,7 +344,11 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
 
               {/* Action Area (Guessing or solved answer display) */}
               <div className="p-4 bg-[#221b14]/40 border-t border-slate-800/60">
-                {isSolvedByMe ? (
+                {isRoundResult ? (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3 text-sm font-semibold text-emerald-200">
+                    Jawaban: <span className="font-extrabold text-emerald-300">{session.lastRevealed!.answer}</span>
+                  </div>
+                ) : isSolvedByMe ? (
                   <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
