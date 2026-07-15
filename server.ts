@@ -130,6 +130,10 @@ interface DBState {
   adminSessionExpiresAt?: number;
   authTokens?: { tokenHash: string; userId: string; expiresAt: number }[];
 }
+function emptySession(): Session {
+  return { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [], ackedPlayerIds: [] };
+}
+
 let dbState: DBState = {
   users: [
     {
@@ -154,18 +158,18 @@ let dbState: DBState = {
     }
   ],
   guessLogs: [],
-  session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] },
+  session: emptySession(),
   playerResults: []
 };
 
 function normalizeDB() {
-  if (!dbState) { dbState = { users: [], stories: [], chat: [], guessLogs: [], session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] }, playerResults: [] }; }
+  if (!dbState) { dbState = { users: [], stories: [], chat: [], guessLogs: [], session: emptySession(), playerResults: [] }; }
   if (!dbState.users) dbState.users = [];
   if (!dbState.stories) dbState.stories = [];
   if (!dbState.chat) dbState.chat = [];
   if (!dbState.guessLogs) dbState.guessLogs = [];
   if (!dbState.playerResults) dbState.playerResults = [];
-  if (!dbState.session) dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
+  if (!dbState.session) dbState.session = emptySession();
   if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
   dbState.authTokens = (dbState.authTokens || []).filter(token => token.expiresAt > Date.now());
   if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
@@ -616,8 +620,11 @@ export async function createApp() {
       return res.status(401).json({ error: "Username atau password salah." });
     }
     dbState.authTokens = (dbState.authTokens || []).filter(item => item.expiresAt > Date.now());
-    if (targetUser.isAdmin && dbState.authTokens.some(item => item.userId === targetUser.id)) {
-      return res.status(409).json({ error: "Admin sedang login di perangkat lain." });
+    if (targetUser.isAdmin) {
+      // Allow admin re-login from a new device by invalidating any
+      // existing admin token (single-session invariant, but the old one
+      // is force-replaced rather than blocking the new login).
+      dbState.authTokens = dbState.authTokens.filter(item => item.userId !== targetUser.id);
     }
     const token = randomBytes(32).toString("base64url");
     dbState.authTokens.push({
@@ -1000,7 +1007,7 @@ export async function createApp() {
     // Clear everything
     dbState.stories = [];
     dbState.guessLogs = [];
-    dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
+    dbState.session = emptySession();
     dbState.playerResults = [];
     dbState.chat = [];
     dbState.users.forEach(user => { user.isReady = false; });
@@ -1037,7 +1044,7 @@ export async function createApp() {
 
     // Clear session status, logs, chat, and results
     dbState.guessLogs = [];
-    dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
+    dbState.session = emptySession();
     dbState.playerResults = [];
     dbState.chat = [];
     
@@ -1076,19 +1083,20 @@ export async function createApp() {
     const selected = shuffled.slice(0, Math.min(25, shuffled.length));
 
     dbState.session = {
-      phase: "playing",
+      phase: "armed",
       sessionId: `sess-${randomUUID()}`,
       mysteryIds: selected.map(s => s.id),
       totalMysteries: selected.length,
       endedAt: null,
       currentRound: {
         storyId: selected[0].id,
-        startTime: Date.now(),
+        startTime: null,
         remainingMs: ROUND_DURATION_MS,
         roundIndex: 0
       },
       roundIndex: 0,
-      revealedStoryIds: []
+      revealedStoryIds: [],
+      ackedPlayerIds: []
     };
     dbState.users.forEach(user => { if (!user.isAdmin) user.isReady = false; });
 
@@ -1105,12 +1113,12 @@ export async function createApp() {
       id: `ann-${randomUUID()}`,
       userId: "system",
       username: "System",
-      text: "🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!",
+      text: "🎮 GAME DIMULAI! Bersiaplah — ronde pertama akan tampil sebentar lagi.",
       isAdmin: true,
       timestamp: Date.now()
     });
 
-    scheduleServerRoundExpiry();
+    scheduleArmedRoundStart();
     await saveDB();
     res.json(getSafeGameState(currentUser));
   }));
@@ -1176,23 +1184,24 @@ export async function createApp() {
     const storyId = remaining[0];
     dbState.session.currentRound = {
       storyId,
-      startTime: Date.now(),
+      startTime: null,
       remainingMs: ROUND_DURATION_MS,
       roundIndex: dbState.session.roundIndex
     };
-    dbState.session.phase = "playing";
+    dbState.session.phase = "armed";
     dbState.session.lastRevealed = undefined; // clear previous reveal
+    dbState.session.ackedPlayerIds = [];
 
     dbState.chat.push({
       id: `ann-${randomUUID()}`,
       userId: "system",
       username: "System",
-      text: `⏳ RONDE ${dbState.session.roundIndex + 1}/${dbState.session.totalMysteries} DIMULAI! Tebak siapa karakter ini dalam 30 detik!`,
+      text: `⏳ RONDE ${dbState.session.roundIndex + 1}/${dbState.session.totalMysteries} akan dimulai sebentar lagi!`,
       isAdmin: true,
       timestamp: Date.now()
     });
 
-    scheduleServerRoundExpiry();
+    scheduleArmedRoundStart();
     await saveDB();
     res.json(getSafeGameState(currentUser));
   }));
@@ -1210,6 +1219,29 @@ export async function createApp() {
     await endRound();
     res.json(getSafeGameState(currentUser));
   }));
+  // Player: acknowledge that the armed round has loaded on their screen.
+  app.post("/api/game/round/ready", asyncHandler(async (req, res) => {
+    const currentUser = getRequestUser(req);
+    if (!currentUser) return res.status(401).json({ error: "Harap login." });
+    if (dbState.session.phase !== "armed" || !dbState.session.currentRound) {
+      return res.json(getSafeGameState(currentUser));
+    }
+    if (!currentUser.isAdmin && !dbState.session.ackedPlayerIds?.includes(currentUser.id)) {
+      dbState.session.ackedPlayerIds = [
+        ...(dbState.session.ackedPlayerIds || []),
+        currentUser.id
+      ];
+      const allPlayers = dbState.users.filter(u => !u.isAdmin);
+      const allAcked = allPlayers.every(p => dbState.session.ackedPlayerIds?.includes(p.id));
+      if (allAcked) {
+        await startArmedRound();
+      } else {
+        await saveDB();
+      }
+    }
+    res.json(getSafeGameState(currentUser));
+  }));
+
   // Any authenticated player may finalize an elapsed round; server time remains authoritative.
   app.post("/api/game/round/expire", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
@@ -1294,10 +1326,40 @@ export async function createApp() {
     const src = session ?? dbState.session;
     const s = { ...src, currentRound: src.currentRound ? { ...src.currentRound } : null };
     if (s.currentRound) {
-      const elapsed = Date.now() - s.currentRound.startTime;
-      s.currentRound.remainingMs = Math.max(0, ROUND_DURATION_MS - elapsed);
+      if (s.currentRound.startTime === null) {
+        // Armed round: full duration remains until all players load.
+        s.currentRound.remainingMs = ROUND_DURATION_MS;
+      } else {
+        const elapsed = Date.now() - s.currentRound.startTime;
+        s.currentRound.remainingMs = Math.max(0, ROUND_DURATION_MS - elapsed);
+      }
     }
     return s;
+  }
+
+  /** Flips an armed round to "playing": sets startTime so all players' 30s
+   *  countdown begins from the same instant. */
+  async function startArmedRound() {
+    const round = dbState.session.currentRound;
+    if (!round || dbState.session.phase !== "armed") return;
+    round.startTime = Date.now();
+    dbState.session.phase = "playing";
+    dbState.session.ackedPlayerIds = [];
+    scheduleServerRoundExpiry();
+    await saveDB();
+  }
+
+  /** Auto-starts an armed round after a short fallback even if some players
+   *  never ack (e.g. tab closed). All acks => start immediately. */
+  function scheduleArmedRoundStart() {
+    if (roundTimeoutTimer) clearTimeout(roundTimeoutTimer);
+    // Wait up to 5s for everyone to load, then start regardless.
+    const FALLBACK_MS = 5_000;
+    roundTimeoutTimer = setTimeout(async () => {
+      const round = dbState.session.currentRound;
+      if (dbState.session.phase !== "armed" || !round) return;
+      await startArmedRound();
+    }, FALLBACK_MS);
   }
 
   function scheduleServerRoundExpiry() {
@@ -1313,7 +1375,7 @@ export async function createApp() {
             if (result.rows[0]) {
               dbState = result.rows[0].state;
               normalizeDB();
-              if (dbState.session.phase === "playing" && dbState.session.currentRound) {
+              if (dbState.session.phase === "playing" && dbState.session.currentRound && dbState.session.currentRound.startTime !== null) {
                 const elapsed = Date.now() - dbState.session.currentRound.startTime;
                 if (elapsed >= ROUND_DURATION_MS) {
                   await endRound();
@@ -1329,7 +1391,7 @@ export async function createApp() {
           }
         } else {
           // Local mode fallback
-          if (dbState.session.phase === "playing" && dbState.session.currentRound) {
+          if (dbState.session.phase === "playing" && dbState.session.currentRound && dbState.session.currentRound.startTime !== null) {
             const elapsed = Date.now() - dbState.session.currentRound.startTime;
             if (elapsed >= ROUND_DURATION_MS) {
               await endRound();

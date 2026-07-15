@@ -1,6 +1,6 @@
-import React, { useState, useEffect, memo, useMemo, useCallback } from "react";
+import React, { useState, useEffect, memo, useMemo, useCallback, useRef } from "react";
 import { SubmittedStory, User, Session } from "../types";
-import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
+import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer, Loader2 } from "lucide-react";
 
 const ROUND_SECONDS = 30;
 
@@ -21,9 +21,10 @@ interface StoryListProps {
   session: Session;
   onGuessStory: (storyId: string, guessText: string) => Promise<{ isCorrect: boolean; answer?: string }>;
   onLobbyReady: () => Promise<void>;
+  onRoundReady: () => Promise<void>;
 }
 
-const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady }: StoryListProps) {
+const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady, onRoundReady }: StoryListProps) {
   const [guesses, setGuesses] = useState<{ [storyId: string]: string }>({});
   const [feedback, setFeedback] = useState<{ [storyId: string]: { isCorrect: boolean; message: string } }>({});
   const [submitting, setSubmitting] = useState<{ [storyId: string]: boolean }>({});
@@ -57,6 +58,19 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
     }, 1_000);
     return () => window.clearInterval(interval);
   }, [session.phase, session.currentRound?.storyId, session.currentRound?.remainingMs]);
+
+  // When a round is "armed" (waiting for everyone to load), ack once so the
+  // server can start the synchronized 30s countdown for all players at once.
+  const ackedRef = useRef(false);
+  useEffect(() => {
+    if (session.phase !== "armed" || !session.currentRound) {
+      ackedRef.current = false;
+      return;
+    }
+    if (currentUser?.isAdmin || ackedRef.current) return;
+    ackedRef.current = true;
+    void onRoundReady();
+  }, [session.phase, session.currentRound?.storyId, currentUser?.isAdmin, onRoundReady]);
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
@@ -258,8 +272,22 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
         </div>
       </div>}
 
+      {/* Armed banner: waiting for everyone to load before the synchronized countdown starts */}
+      {session.phase === "armed" && session.currentRound && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/10 to-yellow-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between animate-glowPulse relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none" />
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+            <span className="text-sm font-bold text-white">
+              Ronde {session.currentRound.roundIndex + 1} / {session.totalMysteries}
+            </span>
+          </div>
+          <span className="text-sm font-bold text-amber-300">Menunggu pemain lain…</span>
+        </div>
+      )}
+
       {/* Countdown banner for active round */}
-      {session.phase === "playing" && session.currentRound && (
+      {session.phase === "playing" && session.currentRound && session.currentRound.startTime !== null && (
         <div className="bg-gradient-to-r from-pink-500/10 via-purple-600/10 to-indigo-500/10 border border-pink-500/20 p-4 rounded-2xl flex items-center justify-between animate-glowPulse relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-pink-500/5 to-transparent pointer-events-none" />
           <div className="flex items-center gap-3">

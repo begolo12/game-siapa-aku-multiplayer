@@ -164,7 +164,8 @@ export default function App() {
   }, []);
 
   // Poll only while a valid signed-in session is active, and never overlap requests.
-  // Polls every 2s during active rounds for tight timer sync, 5s otherwise.
+  // Polls every 2s whenever a game session is alive (lobby wait → playing →
+  // between rounds) so players learn about new rounds within 2s, not 5s.
   useEffect(() => {
     const userId = currentUser?.id;
     activeUserIdRef.current = userId ?? null;
@@ -175,8 +176,8 @@ export default function App() {
       return;
     }
 
-    const phase = gameState.session.phase;
-    const pollIntervalMs = phase === "playing" ? 2_000 : 5_000;
+    const sessionActive = !!gameState.session.sessionId;
+    const pollIntervalMs = sessionActive ? 2_000 : 5_000;
 
     const stopPolling = () => {
       if (pollIntervalRef.current !== null) {
@@ -243,7 +244,7 @@ export default function App() {
 
   // Saat admin memulai ronde, semua pemain langsung melihat cerita aktif.
   useEffect(() => {
-    if (gameState.session.phase === "playing") setActiveTab("guess");
+    if (gameState.session.phase === "playing" || gameState.session.phase === "armed") setActiveTab("guess");
     if (gameState.session.phase === "ended" && gameState.myResults) setActiveTab("result");
   }, [gameState.session.phase, gameState.session.currentRound?.storyId]);
 
@@ -339,6 +340,18 @@ export default function App() {
       setGameState(data.gameState);
     }
     return { isCorrect: data.isCorrect, answer: data.answer };
+  }, [currentUser]);
+
+  const handleRoundReady = useCallback(async () => {
+    if (!currentUser) return;
+    const response = await fetch("/api/game/round/ready", {
+      method: "POST",
+      headers: authenticationHeaders(authTokenRef.current)
+    });
+    const data = await readResponseData(response) as GameState;
+    if (response.ok && data) {
+      setGameState(data);
+    }
   }, [currentUser]);
 
   const handleLobbyReady = useCallback(async () => {
@@ -601,7 +614,7 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
             
             {/* Left Content Area (Tebak Cerita or Buat Cerita) */}
-            {(activeTab !== "guess" || gameState.session.phase === "playing" || gameState.session.lastRevealed) && (
+            {(activeTab !== "guess" || gameState.session.phase === "playing" || gameState.session.phase === "armed" || gameState.session.lastRevealed) && (
               <div className="lg:col-span-8 space-y-6">
 
               {/* Active Tab Component */}
@@ -620,6 +633,7 @@ export default function App() {
                     session={gameState.session}
                     onGuessStory={handleGuessStory}
                     onLobbyReady={handleLobbyReady}
+                    onRoundReady={handleRoundReady}
                   />
                 </div>
               )}

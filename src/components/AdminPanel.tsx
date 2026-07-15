@@ -1,6 +1,6 @@
 import React, { useState, useEffect, memo } from "react";
 import { User, SubmittedStory, Session } from "../types";
-import { Shield, Users, RefreshCw, Layers, ShieldAlert, Calendar, Play, Square, Pencil, Trash2, Save, X, MonitorUp } from "lucide-react";
+import { Shield, Users, RefreshCw, Layers, ShieldAlert, Calendar, Play, Square, Pencil, Trash2, Save, X, MonitorUp, Loader2 } from "lucide-react";
 
 interface AdminPanelProps {
   currentUser: User | null;
@@ -235,7 +235,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
           <div>
             <span className="block text-xs font-bold text-slate-400 uppercase font-mono">Status Sesi</span>
             <span className="text-3xl font-extrabold text-white mt-1 block">
-              {session.phase === "playing" ? "🎮 Bermain" : session.phase === "ended" ? "🏁 Selesai" : "⏸️ Idle"}
+              {session.phase === "playing" ? "🎮 Bermain" : session.phase === "armed" ? "⏳ Bersiap" : session.phase === "ended" ? "🏁 Selesai" : "⏸️ Idle"}
             </span>
             {session.phase === "playing" && (
               <span className="text-xs text-slate-400 mt-1 block">
@@ -277,6 +277,13 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
                   {sessionLoading ? "..." : "Akhiri Sesi"}
                 </button>
               </div>
+            </div>
+          ) : session.phase === "armed" ? (
+            <div className="w-full">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wide">Ronde {session.currentRound ? session.currentRound.roundIndex + 1 : "?"} / {session.totalMysteries}</h3>
+              <p className="text-xs text-amber-400 mt-1 flex items-center gap-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Menunggu pemain selesai memuat…
+              </p>
             </div>
           ) : session.phase === "idle" ? (
             <div className="w-full">

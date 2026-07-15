@@ -51,13 +51,14 @@ export interface GuessLog {
   timestamp: number;
 }
 
-export type GamePhase = "idle" | "playing" | "ended";
+export type GamePhase = "idle" | "armed" | "playing" | "ended";
 
 export const ROUND_DURATION_MS = 30_000;
 
 export interface SessionRound {
   storyId: string;
-  startTime: number;
+  /** null while the round is "armed" and waiting for all players to load. */
+  startTime: number | null;
   /** Stored duration at round creation; clients derive the live countdown from startTime. */
   remainingMs: number;
   roundIndex: number; // 0-based
@@ -94,6 +95,8 @@ export interface Session {
   roundIndex: number; // how many rounds completed so far
   revealedStoryIds: string[]; // stories whose answers have been revealed after round end
   lastRevealed?: RevealedAnswer; // most recently revealed answer (for showing reveal card)
+  /** Player IDs that have acked they finished loading the current armed round. */
+  ackedPlayerIds?: string[];
 }
 
 export interface GameState {
