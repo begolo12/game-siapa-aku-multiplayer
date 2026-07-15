@@ -14,6 +14,7 @@ export default function App() {
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<string>("guess");
+  const [expandedResult, setExpandedResult] = useState<number | null>(null);
 
   // Game state synced via polling
   const [gameState, setGameState] = useState<GameState>({
@@ -557,7 +558,15 @@ export default function App() {
                               <span className="text-[10px] font-bold text-slate-500 font-mono bg-slate-800/50 px-1.5 py-0.5 rounded">#{i + 1}</span>
                               <span className={`text-[10px] font-bold ${r.isCorrect ? 'text-emerald-400' : 'text-red-400'}`}>{r.isCorrect ? `+${r.awardedPoints} poin` : '0 poin'}</span>
                             </div>
-                            <p className="whitespace-pre-wrap text-slate-300 italic text-xs leading-relaxed mb-3">"{r.storyPreview}"</p>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedResult(expandedResult === i ? null : i)}
+                              aria-expanded={expandedResult === i}
+                              className="w-full text-left"
+                            >
+                              <p className={`text-slate-300 italic text-xs leading-relaxed mb-2 ${expandedResult === i ? 'whitespace-pre-wrap' : 'truncate'}`}>"{r.storyPreview}"</p>
+                              <span className="text-[10px] font-bold text-amber-400">{expandedResult === i ? 'Tutup cerita' : 'Lihat cerita lengkap'}</span>
+                            </button>
                             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-x-4 text-xs font-mono">
                               <span className="text-slate-400">Jawaban: <span className="text-emerald-400 font-bold">{r.correctAnswer}</span></span>
                               <span className="text-slate-400">Tebakanmu: <span className={r.isCorrect ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{r.playerGuess || '—'}</span></span>
