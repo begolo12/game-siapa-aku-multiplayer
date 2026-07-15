@@ -850,7 +850,9 @@ export async function createApp() {
 
     // If no more mysteries, auto-end session
     if (dbState.session.roundIndex >= dbState.session.mysteryIds.length) {
-      endSession();
+      dbState.session.phase = "ended";
+      dbState.session.endedAt = Date.now();
+      saveDB();
     } else {
       saveDB();
     }
