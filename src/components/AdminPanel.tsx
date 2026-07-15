@@ -160,6 +160,8 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
     );
   }
 
+  const canRevealStories = session.phase === "ended";
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Title */}
@@ -410,13 +412,19 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
         </div>
       </div>
 
-      {/* Stories list with Answers */}
+      {/* Story identities remain hidden until the whole session ends. */}
       <div className="bg-[#2b241c]/80 backdrop-blur-md rounded-2xl border border-slate-800 p-5 shadow-xl">
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-4 font-mono">
-          Semua Cerita Aktif
+          {canRevealStories ? "Hasil Semua Cerita" : `Bank Cerita · ${stories.length} cerita terkumpul`}
         </h3>
 
-        <div className="space-y-4">
+        {!canRevealStories && (
+          <p className="mb-4 rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-xs leading-relaxed text-amber-200">
+            Kreator, isi cerita, dan jawaban dikunci sampai sesi berakhir agar admin juga bermain setara.
+          </p>
+        )}
+
+        {canRevealStories && <div className="space-y-4">
           {stories.map((story) => (
             <div
               key={story.id}
@@ -454,10 +462,10 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
               Belum ada cerita misteri yang dipublikasikan.
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
-      <div className="bg-[#2b241c]/80 backdrop-blur-md rounded-2xl border border-slate-800 p-5 shadow-xl">
+      {canRevealStories && <div className="bg-[#2b241c]/80 backdrop-blur-md rounded-2xl border border-slate-800 p-5 shadow-xl">
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-4 font-mono">Riwayat Ronde</h3>
         <div className="space-y-2 max-h-72 overflow-y-auto">
           {session.revealedStoryIds.map((storyId, index) => {
@@ -466,7 +474,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
           })}
           {session.revealedStoryIds.length === 0 && <p className="text-xs text-slate-500">Belum ada ronde selesai.</p>}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
