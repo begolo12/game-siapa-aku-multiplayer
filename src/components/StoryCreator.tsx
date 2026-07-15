@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from "react";
-import { StoryTemplate, SubmittedStory, User } from "../types";
+import { StoryTemplate, SubmittedStory, User, Session } from "../types";
 import { ChevronRight, ChevronLeft, Send, Sparkles, BookOpen, AlertCircle, CheckCircle2, Lock, Shield } from "lucide-react";
 
 interface StoryCreatorProps {

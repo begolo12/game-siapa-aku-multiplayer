@@ -737,7 +737,7 @@ export async function createApp() {
   app.put("/api/game/story/:storyId", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) return res.status(401).json({ error: "Harap login." });
-    if (dbState.session.phase === "playing") return res.status(403).json({ error: "Cerita tidak dapat diubah saat game berjalan." });
+    if (dbState.session.sessionId && dbState.session.phase !== "ended") return res.status(403).json({ error: "Cerita tidak dapat diubah saat sesi berjalan." });
 
     const story = dbState.stories.find(item => item.id === req.params.storyId && item.userId === currentUser.id);
     if (!story) return res.status(404).json({ error: "Cerita tidak ditemukan." });

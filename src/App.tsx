@@ -810,7 +810,7 @@ export default function App() {
               {activeTab === "guess" && <span className="w-5 h-0.5 rounded-full bg-pink-400 mt-0.5" />}
             </button>
 
-            {(gameState.session.phase !== "playing" || currentUser.isAdmin) && (
+            {(!gameState.session.sessionId || gameState.session.phase === "ended" || currentUser?.isAdmin) && (
               <button
                 id="bar-tab-create"
                 onClick={() => setActiveTab("create")}
