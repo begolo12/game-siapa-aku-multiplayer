@@ -14,13 +14,14 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
     templateText: "Aku adalah seseorang yang dikenal ........., tetapi aku juga punya sifat buruk, yaitu......\nSaat senggang, waktuku habiskan untuk ...........dan.............\nAku juga punya kebiasaan unik, yaitu .........setiap kali..............\nSoal lingkungan, aku paling suka berada dalam situasi yang..............\ntetapi aku akan langsung merasa risih atau tidak nyaman jika berada dalam situasi yang.........\n\nNAMA :",
     parts: [
       "Aku adalah seseorang yang dikenal ",
-      ", tetapi aku juga punya sifat buruk, yaitu",
+      ", tetapi aku juga punya sifat buruk, yaitu ",
       ".\nSaat senggang, waktuku habiskan untuk ",
       " dan ",
       ".\nAku juga punya kebiasaan unik, yaitu ",
       " setiap kali ",
-      ".\nSoal lingkungan, aku paling suka berada dalam situasi yang",
-      ".\ntetapi aku akan langsung merasa risih atau tidak nyaman jika berada dalam situasi yang.\n\nNAMA :"
+      ".\nSoal lingkungan, aku paling suka berada dalam situasi yang ",
+      ".\ntetapi aku akan langsung merasa risih atau tidak nyaman jika berada dalam situasi yang ",
+      ".\n\nNAMA :"
     ],
     placeholders: [
       "Julukan / sapaan (misal: si rajin)",
@@ -39,9 +40,9 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
     templateText: "Dalam hubungan interpersonal, aku sangat senang berhadapan dengan orang yang perilakunya .............\nSebaliknya, aku paling malas atau ilfeel jika melihat orang yang perilakunya.........\nUntuk urusan perut, aku sangat menyukai.............\ntetapi aku akan langsung menghindari jika disajikan.........karena............\n\nNAMA :",
     parts: [
       "Dalam hubungan interpersonal, aku sangat senang berhadapan dengan orang yang perilakunya ",
-      ".\nSebaliknya, aku paling malas atau ilfeel jika melihat orang yang perilakunya",
-      ".\nUntuk urusan perut, aku sangat menyukai",
-      ".\ntetapi aku akan langsung menghindari jika disajikan",
+      ".\nSebaliknya, aku paling malas atau ilfeel jika melihat orang yang perilakunya ",
+      ".\nUntuk urusan perut, aku sangat menyukai ",
+      ".\ntetapi aku akan langsung menghindari jika disajikan ",
       " karena ",
       ".\n\nNAMA :"
     ],
@@ -109,6 +110,10 @@ function normalizeDB() {
   dbState.users.forEach(user => {
     if (user.isReady === undefined) user.isReady = false;
     if (user.isEliminated === undefined) user.isEliminated = false;
+  });
+  dbState.stories.forEach(story => {
+    const template = PRESET_TEMPLATES.find(item => item.id === story.templateId);
+    if (template) story.parts = template.parts;
   });
 
   const hasAdmin = dbState.users.some(u => u.username === "admin");
