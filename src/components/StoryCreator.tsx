@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { StoryTemplate, User } from "../types";
+import { StoryTemplate, SubmittedStory, User } from "../types";
 import { ChevronRight, ChevronLeft, Send, Sparkles, BookOpen, AlertCircle, CheckCircle2, Lock, Shield } from "lucide-react";
 
 interface StoryCreatorProps {
   currentUser: User | null;
   onSubmitStory: (templateId: string, blanks: string[], answer: string) => Promise<void>;
+  onUpdateStory: (storyId: string, blanks: string[]) => Promise<void>;
   userStoryCount: number;
   userTemplateIds: string[];
+  userStories: SubmittedStory[];
 }
 
-export default function StoryCreator({ currentUser, onSubmitStory, userStoryCount, userTemplateIds }: StoryCreatorProps) {
+export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory, userStoryCount, userTemplateIds, userStories }: StoryCreatorProps) {
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
   const [templateBlanks, setTemplateBlanks] = useState<Record<string, string[]>>({});
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
@@ -17,6 +19,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, userStoryCoun
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [submitProgress, setSubmitProgress] = useState<string | null>(null);
+  const [editingStory, setEditingStory] = useState<SubmittedStory | null>(null);
 
   // Fetch templates from API on mount
   useEffect(() => {
@@ -35,7 +38,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, userStoryCoun
   }, []);
 
   // Which templates still need stories
-  const neededTemplates = templates.filter((t) => !userTemplateIds.includes(t.id));
+  const neededTemplates = editingStory ? templates.filter(t => t.id === editingStory.templateId) : templates.filter((t) => !userTemplateIds.includes(t.id));
 
   const handleBlankChange = (templateId: string, index: number, val: string) => {
     setTemplateBlanks((prev) => {
@@ -89,6 +92,12 @@ export default function StoryCreator({ currentUser, onSubmitStory, userStoryCoun
     setError(null);
 
     try {
+      if (editingStory) {
+        await onUpdateStory(editingStory.id, (templateBlanks[editingStory.templateId] || []).map(b => b.trim()));
+        setEditingStory(null);
+        setIsSuccess(true);
+        return;
+      }
       for (const t of neededTemplates) {
         setSubmitProgress(`Mempublikasikan: ${t.title}...`);
         const blanks = (templateBlanks[t.id] || []).map((b) => b.trim());
@@ -111,7 +120,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, userStoryCoun
   }, 0);
 
   // SUCCESS / ALREADY DONE
-  if (isSuccess || userStoryCount >= 2) {
+  if (!editingStory && (isSuccess || userStoryCount >= 2)) {
     return (
       <div className="bg-[#2b241c]/80 backdrop-blur-md rounded-2xl border border-slate-800/80 p-8 shadow-xl text-center max-w-xl mx-auto my-6 animate-slideUp relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent pointer-events-none" />
@@ -127,6 +136,9 @@ export default function StoryCreator({ currentUser, onSubmitStory, userStoryCoun
         <div className="bg-emerald-950/20 border border-emerald-500/20 text-emerald-300 font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 relative">
           <CheckCircle2 className="w-4 h-4" />
           Cerita Lengkap: 2/2 — Siap Bermain!
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {userStories.map((story, index) => <button key={story.id} type="button" onClick={() => { setEditingStory(story); setTemplateBlanks(prev => ({ ...prev, [story.templateId]: story.blanks })); setWizardStep(1); setIsSuccess(false); }} className="rounded-xl border border-pink-500/30 bg-pink-500/10 px-4 py-2.5 text-sm font-bold text-pink-300 hover:bg-pink-500/20">Edit Cerita {index + 1}</button>)}
         </div>
       </div>
     );
@@ -310,7 +322,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, userStoryCoun
               disabled={isLoading}
               className="w-full bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 hover:from-pink-600 hover:via-purple-700 hover:to-indigo-700 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-bold text-sm px-6 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg shadow-pink-500/15 cursor-pointer"
             >
-              {isLoading ? "Mengunggah..." : `Publikasikan ${neededTemplates.length} Cerita`} <Send className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+              {isLoading ? "Menyimpan..." : editingStory ? "Simpan Perubahan" : `Publikasikan ${neededTemplates.length} Cerita`} <Send className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
             </button>
           </div>
         </div>

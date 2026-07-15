@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { User, GameState } from "./types";
+import { User, GameState, SubmittedStory } from "./types";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import ChatRoom from "./components/ChatRoom";
@@ -204,6 +204,14 @@ export default function App() {
     }
 
     // Refresh state immediately after submission
+    fetchGameState(currentUser.id);
+  };
+
+  const handleStoryUpdate = async (storyId: string, blanks: string[]) => {
+    if (!currentUser) return;
+    const response = await fetch(`/api/game/story/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json", "x-user-id": currentUser.id }, body: JSON.stringify({ blanks }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Gagal mengubah cerita.");
     fetchGameState(currentUser.id);
   };
 
@@ -499,8 +507,10 @@ export default function App() {
                 <StoryCreator
                   currentUser={currentUser}
                   onSubmitStory={handleStorySubmit}
+                  onUpdateStory={handleStoryUpdate}
                   userStoryCount={gameState.stories.filter(s => s.userId === currentUser.id).length}
                   userTemplateIds={gameState.stories.filter(s => s.userId === currentUser.id).map(s => s.templateId)}
+                  userStories={gameState.stories.filter(s => s.userId === currentUser.id) as SubmittedStory[]}
                 />
               )}
 

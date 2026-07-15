@@ -394,6 +394,24 @@ export async function createApp() {
     res.json({ success: true, storyId: newStory.id });
   });
 
+  // Player: edit own story before the admin starts the session.
+  app.put("/api/game/story/:storyId", (req, res) => {
+    const currentUser = getRequestUser(req);
+    if (!currentUser) return res.status(401).json({ error: "Harap login." });
+    if (dbState.session.phase === "playing") return res.status(403).json({ error: "Cerita tidak dapat diubah saat game berjalan." });
+
+    const story = dbState.stories.find(item => item.id === req.params.storyId && item.userId === currentUser.id);
+    if (!story) return res.status(404).json({ error: "Cerita tidak ditemukan." });
+    const { blanks } = req.body;
+    const template = PRESET_TEMPLATES.find(item => item.id === story.templateId);
+    if (!template || !Array.isArray(blanks) || blanks.length !== template.placeholders.length || blanks.some(blank => !blank?.trim())) {
+      return res.status(400).json({ error: "Semua kolom cerita harus diisi lengkap." });
+    }
+    story.blanks = blanks.map(blank => blank.trim());
+    saveDB();
+    res.json({ success: true });
+  });
+
   // Post a guess
   app.post("/api/game/guess", (req, res) => {
     const currentUser = getRequestUser(req);
