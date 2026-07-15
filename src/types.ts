@@ -67,6 +67,7 @@ export interface PlayerAnswer {
   playerGuess?: string;
   storyPreview: string;
   isCorrect: boolean;
+  awardedPoints: number;
 }
 
 export interface RevealedAnswer {

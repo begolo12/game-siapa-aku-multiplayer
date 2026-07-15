@@ -14,7 +14,6 @@ export default function App() {
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<string>("guess");
-  const [expandedResult, setExpandedResult] = useState<number | null>(null);
 
   // Game state synced via polling
   const [gameState, setGameState] = useState<GameState>({
@@ -540,7 +539,7 @@ export default function App() {
                       <p className="text-[10px] text-red-300 font-bold uppercase">Salah</p>
                     </div>
                     <div className="bg-amber-950/30 border border-amber-500/20 rounded-xl p-3 text-center">
-                      <p className="text-2xl font-extrabold text-amber-400">{gameState.myResults.filter((r: any) => r.isCorrect).length * 4}</p>
+                      <p className="text-2xl font-extrabold text-amber-400">{gameState.myResults.reduce((total, result) => total + result.awardedPoints, 0)}</p>
                       <p className="text-[10px] text-amber-300 font-bold uppercase">Poin</p>
                     </div>
                   </div>
@@ -548,19 +547,17 @@ export default function App() {
                   {/* Result list */}
                   <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                     {gameState.myResults.map((r, i) => (
-                      <button
+                      <article
                         key={i}
-                        type="button"
-                        onClick={() => setExpandedResult(expandedResult === i ? null : i)}
-                        aria-expanded={expandedResult === i}
-                        className={`w-full border rounded-xl p-3 text-left sm:p-4 text-sm transition-all cursor-pointer ${r.isCorrect ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/20 bg-red-950/10'}`}
+                        className={`w-full border rounded-xl p-3 text-left sm:p-4 text-sm ${r.isCorrect ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/20 bg-red-950/10'}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-[10px] font-bold text-slate-500 font-mono bg-slate-800/50 px-1.5 py-0.5 rounded">#{i + 1}</span>
-                              <p className={`text-slate-300 italic text-xs leading-relaxed ${expandedResult === i ? 'whitespace-pre-wrap' : 'truncate'}`}>"{r.storyPreview}"</p>
+                              <span className={`text-[10px] font-bold ${r.isCorrect ? 'text-emerald-400' : 'text-red-400'}`}>{r.isCorrect ? `+${r.awardedPoints} poin` : '0 poin'}</span>
                             </div>
+                            <p className="whitespace-pre-wrap text-slate-300 italic text-xs leading-relaxed mb-3">"{r.storyPreview}"</p>
                             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-x-4 text-xs font-mono">
                               <span className="text-slate-400">Jawaban: <span className="text-emerald-400 font-bold">{r.correctAnswer}</span></span>
                               <span className="text-slate-400">Tebakanmu: <span className={r.isCorrect ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{r.playerGuess || '—'}</span></span>
@@ -570,7 +567,7 @@ export default function App() {
                             {r.isCorrect ? '✓' : '✗'}
                           </span>
                         </div>
-                      </button>
+                      </article>
                     ))}
                   </div>
                 </div>

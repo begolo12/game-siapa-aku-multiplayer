@@ -464,7 +464,7 @@ export async function createApp() {
   });
 
   // Post a guess
-  app.post("/api/game/guess", (req, res) => {
+  app.post("/api/game/guess", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) {
       return res.status(401).json({ error: "Harap login untuk menebak." });
@@ -528,6 +528,15 @@ export async function createApp() {
       ? Math.max(1, Math.ceil((ROUND_DURATION_MS - (Date.now() - dbState.session.currentRound!.startTime)) / 1_000))
       : 0;
     log.awardedPoints = awardedPoints;
+    dbState.playerResults.push({
+      userId: currentUser.id,
+      storyId: story.id,
+      correctAnswer: story.answer,
+      playerGuess: log.guessText,
+      storyPreview: story.parts.map((part, index) => part + (story.blanks[index] || "")).join(""),
+      isCorrect,
+      awardedPoints
+    });
 
     if (isCorrect) {
       // Add user to solved list
@@ -568,7 +577,7 @@ export async function createApp() {
       dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
     }
 
-    saveDB();
+    await saveDB();
     res.json({ isCorrect, answer: isCorrect ? story.answer : undefined });
   });
 
@@ -736,8 +745,13 @@ export async function createApp() {
     };
     dbState.users.forEach(user => { if (!user.isAdmin) user.isReady = false; });
 
-    // Reset playerResults
+    // A new session starts a new scoreboard and answer history.
     dbState.playerResults = [];
+    dbState.guessLogs = [];
+    dbState.users.forEach(user => {
+      user.score = 0;
+      user.solvedCount = 0;
+    });
 
     // System announcement
     dbState.chat.push({
@@ -776,19 +790,10 @@ export async function createApp() {
   });
 
   function endSession() {
-    dbState.stories = [];
-    dbState.guessLogs = [];
-    dbState.playerResults = [];
-    dbState.chat = [];
-    dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
-    dbState.users.forEach(user => {
-      user.score = 0;
-      user.solvedCount = 0;
-      user.submittedCount = 0;
-      user.isReady = false;
-      user.isEliminated = false;
-    });
-
+    if (dbState.session.currentRound) endRound();
+    dbState.session.phase = "ended";
+    dbState.session.endedAt = Date.now();
+    dbState.session.currentRound = null;
     saveDB();
   }
 
@@ -862,6 +867,19 @@ export async function createApp() {
     dbState.session.currentRound = null;
 
     if (story) {
+      const storyPreview = story.parts.map((part, index) => part + (story.blanks[index] || "")).join("");
+      dbState.users.forEach(user => {
+        if (!dbState.playerResults.some(result => result.userId === user.id && result.storyId === story.id)) {
+          dbState.playerResults.push({
+            userId: user.id,
+            storyId: story.id,
+            correctAnswer: story.answer,
+            storyPreview,
+            isCorrect: false,
+            awardedPoints: 0
+          });
+        }
+      });
       // Reveal the answer to everyone
       dbState.session.revealedStoryIds.push(story.id);
       dbState.session.lastRevealed = {
