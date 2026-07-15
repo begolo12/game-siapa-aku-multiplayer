@@ -75,6 +75,13 @@ const pool = DATABASE_URL
 const scrypt = promisify(scryptCallback);
 const requestDatabase = new AsyncLocalStorage<{ client: PoolClient }>();
 
+/** Catches unhandled rejections from async Express route handlers and forwards them to the error middleware. */
+function asyncHandler(fn: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<any>) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
 function hashSessionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -136,6 +143,13 @@ let dbState: DBState = {
 };
 
 function normalizeDB() {
+  if (!dbState) { dbState = { users: [], stories: [], chat: [], guessLogs: [], session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] }, playerResults: [] }; }
+  if (!dbState.users) dbState.users = [];
+  if (!dbState.stories) dbState.stories = [];
+  if (!dbState.chat) dbState.chat = [];
+  if (!dbState.guessLogs) dbState.guessLogs = [];
+  if (!dbState.playerResults) dbState.playerResults = [];
+  if (!dbState.session) dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
   if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
   dbState.authTokens = (dbState.authTokens || []).filter(token => token.expiresAt > Date.now());
   if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
@@ -251,11 +265,21 @@ async function persistState() {
 }
 
 async function saveDB() {
-  await persistState();
+  try {
+    await persistState();
+  } catch (error) {
+    console.error("[saveDB] Failed to persist state:", error);
+    throw error;
+  }
 }
 
 async function saveDBNow() {
-  await persistState();
+  try {
+    await persistState();
+  } catch (error) {
+    console.error("[saveDBNow] Failed to persist state:", error);
+    throw error;
+  }
 }
 
 export async function createApp() {
@@ -267,9 +291,9 @@ export async function createApp() {
   // The file fallback has no database row lock; serialize every mutation in this process.
   let fileMutationTail = Promise.resolve();
   if (!pool) {
-    app.use("/api", async (req, res, next) => {
+    app.use("/api", asyncHandler(async (req, res, next) => {
       if (req.method === "GET") return next();
-      const previousMutation = fileMutationTail;
+      const previousMutation = fileMutationTail.catch(() => undefined);
       let releaseMutation: (() => void) | undefined;
       fileMutationTail = previousMutation.then(() => new Promise<void>(resolve => {
         releaseMutation = resolve;
@@ -285,7 +309,7 @@ export async function createApp() {
       res.once("finish", release);
       res.once("close", release);
       next();
-    });
+    }));
   }
 
   const loadReadState = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -344,8 +368,11 @@ export async function createApp() {
   const normalizeState = (state: DBState) => {
     const previousState = dbState;
     dbState = state;
-    normalizeDB();
-    dbState = previousState;
+    try {
+      normalizeDB();
+    } finally {
+      dbState = previousState;
+    }
   };
 
   // Authentication uses a server-issued opaque bearer token; never trust a client-supplied user id.
@@ -370,7 +397,7 @@ export async function createApp() {
   });
 
   // Authentication: Register
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", asyncHandler(async (req, res) => {
     const { username, password } = req.body;
     if (typeof username !== "string" || typeof password !== "string" || !username.trim() || !password) {
       return res.status(400).json({ error: "Username dan Password harus diisi." });
@@ -403,10 +430,10 @@ export async function createApp() {
     await saveDB();
     const { passwordHash: _, ...userSafe } = newUser;
     res.json({ user: userSafe, token });
-  });
+  }));
 
   // Authentication: Login
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", asyncHandler(async (req, res) => {
     const { username, password } = req.body;
     if (typeof username !== "string" || typeof password !== "string" || !username.trim() || !password) {
       return res.status(400).json({ error: "Username dan Password harus diisi." });
@@ -428,9 +455,9 @@ export async function createApp() {
     await saveDB();
     const { passwordHash: _, ...userSafe } = targetUser;
     res.json({ user: userSafe, token });
-  });
+  }));
 
-  app.post("/api/auth/logout", async (req, res) => {
+  app.post("/api/auth/logout", asyncHandler(async (req, res) => {
     const authorization = req.get("authorization");
     if (!authorization?.startsWith("Bearer ")) return res.status(401).json({ error: "Harap login." });
     const tokenHash = hashSessionToken(authorization.slice(7));
@@ -439,7 +466,7 @@ export async function createApp() {
     dbState.authTokens = (dbState.authTokens || []).filter(item => item.tokenHash !== tokenHash);
     await saveDB();
     res.json({ success: true });
-  });
+  }));
 
   // GET polling is served from an independent PostgreSQL snapshot and never mutates global state.
   app.get("/api/game/state", (req, res) => {
@@ -482,7 +509,7 @@ export async function createApp() {
   });
 
   // Add a story (Wizard 1 + Wizard 2 Submit)
-  app.post("/api/game/story", async (req, res) => {
+  app.post("/api/game/story", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) {
       return res.status(401).json({ error: "Gagal memproses. Anda harus masuk terlebih dahulu." });
@@ -554,10 +581,10 @@ export async function createApp() {
 
     await saveDB();
     res.json({ success: true, storyId: newStory.id });
-  });
+  }));
 
   // Player: edit own story before the admin starts the session.
-  app.put("/api/game/story/:storyId", async (req, res) => {
+  app.put("/api/game/story/:storyId", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) return res.status(401).json({ error: "Harap login." });
     if (dbState.session.phase === "playing") return res.status(403).json({ error: "Cerita tidak dapat diubah saat game berjalan." });
@@ -572,10 +599,10 @@ export async function createApp() {
     story.blanks = blanks.map(blank => blank.trim());
     await saveDB();
     res.json({ success: true });
-  });
+  }));
 
   // Post a guess
-  app.post("/api/game/guess", async (req, res) => {
+  app.post("/api/game/guess", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) {
       return res.status(401).json({ error: "Harap login untuk menebak." });
@@ -694,10 +721,10 @@ export async function createApp() {
 
     await saveDB();
     res.json({ isCorrect, answer: isCorrect ? story.answer : undefined });
-  });
+  }));
 
   // Player: mark lobby readiness. A ready player has completed two stories.
-  app.post("/api/game/lobby/ready", async (req, res) => {
+  app.post("/api/game/lobby/ready", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || currentUser.isAdmin) return res.status(403).json({ error: "Hanya pemain yang dapat mengubah status siap." });
     if (dbState.session.sessionId && dbState.session.phase !== "ended") return res.status(409).json({ error: "Game sudah berjalan." });
@@ -706,10 +733,10 @@ export async function createApp() {
     currentUser.isReady = !currentUser.isReady;
     await saveDB();
     res.json({ isReady: currentUser.isReady });
-  });
+  }));
 
   // Post chat message
-  app.post("/api/chat", async (req, res) => {
+  app.post("/api/chat", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) {
       return res.status(401).json({ error: "Anda harus masuk terlebih dahulu untuk mengirim obrolan." });
@@ -735,7 +762,7 @@ export async function createApp() {
     }
     await saveDB();
     res.json(newMessage);
-  });
+  }));
 
   // Admin Route: Get full stories list (including answers)
   app.get("/api/admin/stories", (req, res) => {
@@ -748,7 +775,7 @@ export async function createApp() {
   });
 
   // Admin: edit a player. Locked while a game is running so answers stay consistent.
-  app.patch("/api/admin/users/:userId", async (req, res) => {
+  app.patch("/api/admin/users/:userId", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser?.isAdmin) return res.status(403).json({ error: "Akses ditolak." });
     if (dbState.session.phase === "playing") {
@@ -778,10 +805,10 @@ export async function createApp() {
     await saveDB();
     const { password: _, passwordHash: __, ...safeUser } = user;
     res.json({ user: safeUser });
-  });
+  }));
 
   // Admin: delete a player and every record owned by that player.
-  app.delete("/api/admin/users/:userId", async (req, res) => {
+  app.delete("/api/admin/users/:userId", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser?.isAdmin) return res.status(403).json({ error: "Akses ditolak." });
     if (dbState.session.sessionId && dbState.session.phase !== "ended") {
@@ -799,10 +826,10 @@ export async function createApp() {
     dbState.authTokens = (dbState.authTokens || []).filter(token => token.userId !== user.id);
     await saveDB();
     res.json({ success: true });
-  });
+  }));
 
   // Admin Route: Reset game
-  app.post("/api/admin/reset", async (req, res) => {
+  app.post("/api/admin/reset", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak. Rute ini hanya untuk Admin." });
@@ -821,12 +848,12 @@ export async function createApp() {
     dbState.authTokens = (dbState.authTokens || []).filter(token => dbState.users.some(user => user.id === token.userId));
     await saveDBNow();
     res.json({ success: true, message: "Semua data berhasil direset (users, stories, sessions, chat)." });
-  });
+  }));
 
   // ---------- Session endpoints ----------
 
   // Admin: Start game session (picks up to 25 random stories)
-  app.post("/api/admin/session/start", async (req, res) => {
+  app.post("/api/admin/session/start", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -885,10 +912,10 @@ export async function createApp() {
 
     await saveDBNow();
     res.json({ success: true, session: dbState.session });
-  });
+  }));
 
   // Admin: End session
-  app.post("/api/admin/session/end", async (req, res) => {
+  app.post("/api/admin/session/end", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser?.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -898,7 +925,7 @@ export async function createApp() {
     }
     await endSession();
     res.json({ success: true, session: dbState.session });
-  });
+  }));
 
   // Player: Get my results (also available through game/state.myResults)
   app.get("/api/session/results", (req, res) => {
@@ -923,7 +950,7 @@ export async function createApp() {
   // ---------- Round endpoints ----------
 
   // Admin: Start a round
-  app.post("/api/admin/round/start", async (req, res) => {
+  app.post("/api/admin/round/start", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -961,10 +988,10 @@ export async function createApp() {
 
     await saveDBNow();
     res.json({ success: true, session: roundSafeSession() });
-  });
+  }));
 
   // Admin: End current round (before timer expires)
-  app.post("/api/admin/round/end", async (req, res) => {
+  app.post("/api/admin/round/end", asyncHandler(async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -975,9 +1002,9 @@ export async function createApp() {
 
     await endRound();
     res.json({ success: true, session: roundSafeSession() });
-  });
+  }));
   // Any authenticated player may finalize an elapsed round; server time remains authoritative.
-  app.post("/api/game/round/expire", async (req, res) => {
+  app.post("/api/game/round/expire", asyncHandler(async (req, res) => {
     if (!getRequestUser(req)) return res.status(401).json({ error: "Harap login." });
     const round = dbState.session.currentRound;
     if (dbState.session.phase !== "playing" || !round) {
@@ -988,7 +1015,7 @@ export async function createApp() {
     }
     await endRound();
     res.json({ success: true, session: roundSafeSession() });
-  });
+  }));
 
 
   /** Closes the current round, advances roundIndex, reveals answer in chat */
@@ -1054,6 +1081,16 @@ export async function createApp() {
     }
     return s;
   }
+
+  // ------------------------- Global Error Handler -------------------------
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("[express-error]", err);
+    // Do not leak internal details to the client.
+    const message = process.env.NODE_ENV === "development" ? (err?.message || "Internal server error.") : "Internal server error.";
+    if (!res.headersSent) {
+      res.status(err?.statusCode || err?.status || 500).json({ error: message });
+    }
+  });
 
   // ------------------------- Vite setup -------------------------
 
