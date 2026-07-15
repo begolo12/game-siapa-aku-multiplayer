@@ -1,20 +1,31 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Siapa Aku Multiplayer
 
-# Run and deploy your AI Studio app
+## Run locally
 
-This contains everything you need to run your app locally.
+**Prerequisites:** Node.js and npm.
 
-View your app in AI Studio: https://ai.studio/apps/2a5b272c-7a2c-4b03-aec1-df1cd87941f0
+1. Install the locked dependencies:
+   ```sh
+   npm ci
+   ```
+2. Copy the environment template and, if persistent storage is wanted locally, set
+   `DATABASE_URL` in `.env`:
+   ```sh
+   cp .env.example .env
+   ```
+   Without `DATABASE_URL`, the local server uses `data-store.json`.
+3. Start the development server:
+   ```sh
+   npm run dev
+   ```
 
-## Run Locally
+## Build and deploy on Vercel
 
-**Prerequisites:**  Node.js
+`npm run build` creates the Vite frontend in `dist/` and a local production
+server bundle. On Vercel, `api/[...path].ts` imports the server source as a
+function dependency; `vercel.json` serves the static frontend and routes
+`/api/*` requests to that function.
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Set `DATABASE_URL` in the Vercel project's Production (and Preview, if used)
+environment before deploying. The file-based local fallback is not persistent
+in Vercel serverless functions.

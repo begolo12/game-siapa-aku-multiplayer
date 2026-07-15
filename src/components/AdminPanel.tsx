@@ -6,12 +6,15 @@ interface AdminPanelProps {
   currentUser: User | null;
   users: User[];
   session: Session;
+  authToken: string;
   onResetGame: () => Promise<void>;
+  onStartSession: () => Promise<void>;
+  onEndSession: () => Promise<void>;
   onStartRound: () => Promise<void>;
   onEndRound: () => Promise<void>;
 }
 
-export default function AdminPanel({ currentUser, users, session, onResetGame, onStartRound, onEndRound }: AdminPanelProps) {
+export default function AdminPanel({ currentUser, users, session, authToken, onResetGame, onStartSession, onEndSession, onStartRound, onEndRound }: AdminPanelProps) {
   const [stories, setStories] = useState<SubmittedStory[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -27,25 +30,20 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
 
   const fetchAdminStories = () => {
     setLoading(true);
-    fetch("/api/admin/stories", {
-      headers: {
-        "x-user-id": currentUser?.id || ""
-      }
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Akses ditolak atau kesalahan server");
-        return res.json();
+    fetch("/api/admin/stories", { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Akses ditolak atau kesalahan server");
+        return data;
       })
       .then((data) => setStories(data))
-      .catch((err) => console.error(err))
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Gagal memuat cerita admin."))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    if (currentUser?.isAdmin) {
-      fetchAdminStories();
-    }
-  }, [currentUser]);
+    if (currentUser?.isAdmin && authToken) fetchAdminStories();
+  }, [currentUser?.id, authToken]);
 
   const handleReset = async () => {
     try {
@@ -54,54 +52,41 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
       setConfirmReset(false);
       setMessage("Game state berhasil direset total oleh Admin!");
       fetchAdminStories();
-      setTimeout(() => setMessage(null), 5000);
-    } catch (err: any) {
-      setMessage(`❌ ${err.message || "Gagal mereset permainan."}`);
+    } catch (error) {
+      setMessage(`❌ ${error instanceof Error ? error.message : "Gagal mereset permainan."}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStartSession = async () => {
+  const runSessionAction = async (action: () => Promise<void>, successMessage: string, closeConfirmation = false) => {
     setSessionLoading(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/session/start", {
-        method: "POST",
-        headers: { "x-user-id": currentUser?.id || "" }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setMessage(`🎮 Game dimulai! Cerita pertama tampil selama 30 detik.`);
+      await action();
+      if (closeConfirmation) setConfirmEndSession(false);
+      setMessage(successMessage);
       fetchAdminStories();
-    } catch (err: any) {
-      setMessage("❌ " + err.message);
+    } catch (error) {
+      setMessage(`❌ ${error instanceof Error ? error.message : "Aksi sesi gagal."}`);
     } finally {
       setSessionLoading(false);
-      setTimeout(() => setMessage(null), 5000);
     }
   };
 
-  const handleEndSession = async () => {
-    setSessionLoading(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/admin/session/end", {
-        method: "POST",
-        headers: { "x-user-id": currentUser?.id || "" }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setConfirmEndSession(false);
-      setMessage("🏁 Sesi diakhiri! Pemain bisa melihat hasil.");
-      fetchAdminStories();
-    } catch (err: any) {
-      setMessage("❌ " + err.message);
-    } finally {
-      setSessionLoading(false);
-      setTimeout(() => setMessage(null), 5000);
-    }
-  };
+  const handleStartSession = () => runSessionAction(
+    onStartSession,
+    "🎮 Game dimulai! Cerita pertama tampil selama 30 detik."
+  );
+
+  const handleEndSession = () => runSessionAction(
+    onEndSession,
+    "🏁 Sesi diakhiri! Pemain bisa melihat hasil.",
+    true
+  );
+
+  const handleStartRound = () => runSessionAction(onStartRound, "▶️ Ronde dimulai.");
+  const handleEndRound = () => runSessionAction(onEndRound, "⏹️ Ronde diakhiri.");
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleTimeString("id-ID", {
@@ -113,44 +98,56 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
 
   const refreshAll = () => {
     fetchAdminStories();
-    window.location.reload();
   };
 
   const saveUser = async (userId: string) => {
     setUserSaving(true);
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
+      const response = await fetch(`/api/admin/users/${userId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id || "" },
+        headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ username: editName, password: editPassword })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Gagal memperbarui pemain.");
       setEditingUserId(null);
       setEditPassword("");
       setMessage("Pemain berhasil diperbarui.");
       refreshAll();
-    } catch (err: any) { setMessage(`❌ ${err.message}`); }
-    finally { setUserSaving(false); }
+    } catch (error) {
+      setMessage(`❌ ${error instanceof Error ? error.message : "Gagal memperbarui pemain."}`);
+    } finally {
+      setUserSaving(false);
+    }
   };
 
   const deleteUser = async (user: User) => {
     setUserSaving(true);
     try {
-      const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE", headers: { "x-user-id": currentUser?.id || "" } });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const response = await fetch(`/api/admin/users/${user.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Gagal menghapus pemain.");
       setDeleteCandidate(null);
       setMessage(`${user.username} dihapus.`);
       refreshAll();
-    } catch (err: any) { setMessage(`❌ ${err.message}`); }
-    finally { setUserSaving(false); }
+    } catch (error) {
+      setMessage(`❌ ${error instanceof Error ? error.message : "Gagal menghapus pemain."}`);
+    } finally {
+      setUserSaving(false);
+    }
   };
 
   const togglePresenter = async () => {
-    if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
-    else await document.exitFullscreen();
-    setPresenter(!presenter);
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else await document.exitFullscreen();
+      setPresenter((active) => !active);
+    } catch {
+      setMessage("Mode presenter tidak dapat diaktifkan.");
+    }
   };
 
   if (!currentUser?.isAdmin) {
@@ -252,7 +249,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
               <div className="flex gap-2 mt-3">
                 <button
                   id="end-round-btn"
-                  onClick={onEndRound}
+                  onClick={handleEndRound}
                   disabled={sessionLoading}
                   className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
                 >
@@ -281,7 +278,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
                   <div className="mt-3 flex gap-2">
                     <button
                       id="start-round-btn"
-                      onClick={onStartRound}
+                      onClick={handleStartRound}
                       disabled={sessionLoading || session.roundIndex >= session.mysteryIds.length}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
                     >

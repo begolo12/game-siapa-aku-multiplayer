@@ -3,6 +3,8 @@ import path from "path";
 import fs from "fs";
 import "dotenv/config";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash, randomBytes, randomInt, randomUUID, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import { Pool, PoolClient } from "pg";
 import { User, SubmittedStory, ChatMessage, GuessLog, StoryTemplate, GamePhase, PlayerAnswer, Session } from "./src/types";
 
@@ -57,16 +59,45 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
 ];
 
 const DB_FILE = path.join(process.cwd(), "data-store.json");
+const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const ROUND_DURATION_MS = 30_000;
 const DATABASE_URL = process.env.DATABASE_URL;
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
-const requestDatabase = new AsyncLocalStorage<{ client: PoolClient; saves: Promise<void>[] }>();
+const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      // A serverless instance needs only a few clients; high per-instance pools exhaust Neon under scale-out.
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+      allowExitOnIdle: true,
+    })
+  : null;
+const scrypt = promisify(scryptCallback);
+const requestDatabase = new AsyncLocalStorage<{ client: PoolClient }>();
+
+function hashSessionToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+async function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const derived = await scrypt(password, salt, 64) as Buffer;
+  return `${salt}:${derived.toString("hex")}`;
+}
+
+async function passwordMatches(password: string, passwordHash: string) {
+  const [salt, encodedHash] = passwordHash.split(":");
+  if (!salt || !encodedHash) return false;
+  const expected = Buffer.from(encodedHash, "hex");
+  const actual = await scrypt(password, salt, 64) as Buffer;
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
 
 const firstName = (value: string) => value.trim().split(/\s+/)[0];
 
 // Local state
 interface DBState {
-  users: (User & { password?: string })[];
+  users: (User & { passwordHash?: string; password?: string })[];
   stories: SubmittedStory[];
   chat: ChatMessage[];
   guessLogs: GuessLog[];
@@ -74,14 +105,14 @@ interface DBState {
   /** Per-player guesses for ended session results */
   playerResults: PlayerAnswer[];
   adminSessionExpiresAt?: number;
+  authTokens?: { tokenHash: string; userId: string; expiresAt: number }[];
 }
-
 let dbState: DBState = {
   users: [
     {
       id: "admin-uid",
       username: "admin",
-      password: "admin123",
+      password: INITIAL_ADMIN_PASSWORD,
       score: 100,
       solvedCount: 5,
       submittedCount: 2,
@@ -94,7 +125,7 @@ let dbState: DBState = {
       id: "init-msg-1",
       userId: "admin-uid",
       username: "Admin-System",
-      text: "Selamat datang di Game Siapa Aku Multiplayer! Silakan daftar akun Anda atau masuk jika sudah punya. Admin: admin / admin123.",
+      text: "Selamat datang di Game Siapa Aku Multiplayer! Silakan daftar akun Anda atau masuk jika sudah punya.",
       isAdmin: true,
       timestamp: Date.now()
     }
@@ -106,6 +137,7 @@ let dbState: DBState = {
 
 function normalizeDB() {
   if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
+  dbState.authTokens = (dbState.authTokens || []).filter(token => token.expiresAt > Date.now());
   if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
   dbState.users.forEach(user => {
     if (user.isReady === undefined) user.isReady = false;
@@ -119,13 +151,22 @@ function normalizeDB() {
   const hasAdmin = dbState.users.some(u => u.username === "admin");
   if (!hasAdmin) {
     dbState.users.push({
-      id: "admin-uid", username: "admin", password: "admin123", score: 100,
+      id: "admin-uid", username: "admin", password: INITIAL_ADMIN_PASSWORD, score: 100,
       solvedCount: 5, submittedCount: 2, isAdmin: true
     });
   } else {
     const adminObj = dbState.users.find(u => u.username === "admin")!;
     adminObj.isAdmin = true;
-    adminObj.password = adminObj.password || "admin123";
+    if (!adminObj.password && !adminObj.passwordHash) adminObj.password = INITIAL_ADMIN_PASSWORD;
+  }
+}
+
+async function migrateLegacyPasswords() {
+  for (const user of dbState.users) {
+    if (user.password && !user.passwordHash) {
+      user.passwordHash = await hashPassword(user.password);
+      delete user.password;
+    }
   }
 }
 
@@ -143,7 +184,9 @@ function loadFileDB() {
           chat: parsed.chat || dbState.chat,
           guessLogs: parsed.guessLogs || dbState.guessLogs,
           session: parsed.session || dbState.session,
-          playerResults: parsed.playerResults || dbState.playerResults
+          playerResults: parsed.playerResults || dbState.playerResults,
+          adminSessionExpiresAt: parsed.adminSessionExpiresAt,
+          authTokens: parsed.authTokens || []
         };
         normalizeDB();
         saveFileDB();
@@ -171,72 +214,147 @@ function saveFileDB() {
 }
 
 async function initDatabase() {
+  if (process.env.VERCEL && !process.env.ADMIN_PASSWORD) {
+    throw new Error("ADMIN_PASSWORD is required for Vercel deployments.");
+  }
   if (!pool) {
+    if (process.env.VERCEL) {
+      throw new Error("DATABASE_URL is required for Vercel deployments; the file fallback is single-process only.");
+    }
     loadFileDB();
+    await migrateLegacyPasswords();
+    saveFileDB();
     console.warn("DATABASE_URL tidak tersedia; memakai data-store.json.");
     return;
   }
   await pool.query(`CREATE TABLE IF NOT EXISTS app_state (id BOOLEAN PRIMARY KEY DEFAULT TRUE, state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), CONSTRAINT one_state CHECK (id))`);
   await pool.query(`INSERT INTO app_state (id, state) VALUES (TRUE, $1::jsonb) ON CONFLICT (id) DO NOTHING`, [JSON.stringify(dbState)]);
+  const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
+  dbState = result.rows[0].state;
+  normalizeDB();
+  await migrateLegacyPasswords();
+  await pool.query(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`, [JSON.stringify(dbState)]);
   console.info("PostgreSQL Neon terhubung.");
 }
 
-async function saveDB() {
+/** Persists the request's serialized state before its response is committed. */
+async function persistState() {
   if (!pool) {
     saveFileDB();
     return;
   }
   const context = requestDatabase.getStore();
-  const save = (context?.client || pool).query(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`, [JSON.stringify(dbState)]).then(() => undefined);
-  context?.saves.push(save);
-  await save;
+  await (context?.client || pool).query(
+    `UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`,
+    [JSON.stringify(dbState)]
+  );
+}
+
+async function saveDB() {
+  await persistState();
+}
+
+async function saveDBNow() {
+  await persistState();
 }
 
 export async function createApp() {
   await initDatabase();
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({ limit: "32kb" }));
 
-  // Serialize each request against the single JSON state row. This prevents
-  // separate Vercel instances from overwriting newer sessions and stories.
-  if (pool) app.use(async (_req, res, next) => {
-    const client = await pool.connect();
+  // The file fallback has no database row lock; serialize every mutation in this process.
+  let fileMutationTail = Promise.resolve();
+  if (!pool) {
+    app.use("/api", async (req, res, next) => {
+      if (req.method === "GET") return next();
+      const previousMutation = fileMutationTail;
+      let releaseMutation: (() => void) | undefined;
+      fileMutationTail = previousMutation.then(() => new Promise<void>(resolve => {
+        releaseMutation = resolve;
+      }));
+      await previousMutation;
+      let released = false;
+      const release = () => {
+        if (!released) {
+          released = true;
+          releaseMutation?.();
+        }
+      };
+      res.once("finish", release);
+      res.once("close", release);
+      next();
+    });
+  }
+
+  const loadReadState = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.method !== "GET" || !pool) return next();
     try {
-      await client.query("BEGIN");
-      const result = await client.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE FOR UPDATE");
-      dbState = result.rows[0].state;
-      normalizeDB();
-
-      const originalJson = res.json.bind(res);
-      const saves: Promise<void>[] = [];
-      let settled = false;
-      res.json = ((body: unknown) => {
-        void Promise.all(saves).then(async () => {
-          await client.query("COMMIT");
-          settled = true;
-          client.release();
-          originalJson(body);
-        }).catch(next);
-        return res;
-      }) as typeof res.json;
-
-      res.on("close", () => {
-        if (!settled) void client.query("ROLLBACK").finally(() => client.release());
-      });
-      requestDatabase.run({ client, saves }, next);
+      const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
+      if (!result.rows[0]) throw new Error("app_state is missing");
+      res.locals.state = result.rows[0].state;
+      normalizeState(res.locals.state);
+      next();
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      client.release();
       next(error);
     }
-  });
+  };
+  if (pool) {
+    app.use("/api/game/state", loadReadState);
+    app.use("/api/admin/stories", loadReadState);
+    app.use("/api/session/results", loadReadState);
 
-  // Helper middleware to authenticate from Authorization header or custom simple token (user-id)
-  const getRequestUser = (req: express.Request): (User & { password?: string }) | null => {
-    const userId = req.headers["x-user-id"] as string;
-    if (!userId) return null;
-    return dbState.users.find(u => u.id === userId) || null;
+    app.use("/api", async (req, res, next) => {
+      if (req.method === "GET") return next();
+      const client = await pool.connect();
+      let settled = false;
+      const finalize = async (commit: boolean) => {
+        if (settled) return;
+        settled = true;
+        try {
+          await client.query(commit ? "COMMIT" : "ROLLBACK");
+        } finally {
+          client.release();
+        }
+      };
+      try {
+        await client.query("BEGIN");
+        const result = await client.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE FOR UPDATE");
+        if (!result.rows[0]) throw new Error("app_state is missing");
+        dbState = result.rows[0].state;
+        normalizeDB();
+
+        const originalEnd = res.end.bind(res);
+        res.end = ((...args: Parameters<express.Response["end"]>) => {
+          void finalize(true).then(() => originalEnd(...args)).catch(next);
+          return res;
+        }) as express.Response["end"];
+        res.once("close", () => {
+          if (!settled) void finalize(false);
+        });
+        requestDatabase.run({ client }, () => next());
+      } catch (error) {
+        await finalize(false);
+        next(error);
+      }
+    });
+  }
+
+  const normalizeState = (state: DBState) => {
+    const previousState = dbState;
+    dbState = state;
+    normalizeDB();
+    dbState = previousState;
+  };
+
+  // Authentication uses a server-issued opaque bearer token; never trust a client-supplied user id.
+  const getRequestUser = (req: express.Request, state = dbState): (User & { passwordHash?: string; password?: string }) | null => {
+    const authorization = req.get("authorization");
+    if (!authorization?.startsWith("Bearer ")) return null;
+    const tokenHash = createHash("sha256").update(authorization.slice(7)).digest("hex");
+    const session = state.authTokens?.find(item => item.tokenHash === tokenHash && item.expiresAt > Date.now());
+    return session ? state.users.find(user => user.id === session.userId) || null : null;
   };
 
   // ------------------------- API Routes -------------------------
@@ -252,122 +370,115 @@ export async function createApp() {
   });
 
   // Authentication: Register
-  app.post("/api/auth/register", (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) {
+    if (typeof username !== "string" || typeof password !== "string" || !username.trim() || !password) {
       return res.status(400).json({ error: "Username dan Password harus diisi." });
     }
-
     const trimmedUsername = firstName(username);
-    if (trimmedUsername.length < 3) {
-      return res.status(400).json({ error: "Nama depan minimal 3 karakter." });
+    if (trimmedUsername.length < 3 || trimmedUsername.length > 32 || password.length < 4 || password.length > 128) {
+      return res.status(400).json({ error: "Nama depan 3–32 karakter dan password 4–128 karakter diperlukan." });
     }
-
-    const existingUser = dbState.users.find(
-      u => u.username.toLowerCase() === trimmedUsername.toLowerCase()
-    );
-    if (existingUser) {
+    if (dbState.users.some(user => user.username.toLowerCase() === trimmedUsername.toLowerCase())) {
       return res.status(400).json({ error: "Username sudah terdaftar. Gunakan nama lain." });
     }
 
-    const newUser: User & { password?: string } = {
-      id: "u-" + Math.random().toString(36).substr(2, 9),
+    const newUser: User & { passwordHash: string } = {
+      id: `u-${randomUUID()}`,
       username: trimmedUsername,
-      password: password,
+      passwordHash: await hashPassword(password),
       score: 0,
       solvedCount: 0,
       submittedCount: 0,
       isAdmin: false
     };
-
+    const token = randomBytes(32).toString("base64url");
     dbState.users.push(newUser);
-    saveDB();
-
-    // Strip password in response
-    const { password: _, ...userSafe } = newUser;
-    res.json({ user: userSafe });
+    dbState.authTokens = (dbState.authTokens || []).filter(item => item.expiresAt > Date.now());
+    dbState.authTokens.push({
+      tokenHash: hashSessionToken(token),
+      userId: newUser.id,
+      expiresAt: Date.now() + 12 * 60 * 60 * 1_000
+    });
+    await saveDB();
+    const { passwordHash: _, ...userSafe } = newUser;
+    res.json({ user: userSafe, token });
   });
 
   // Authentication: Login
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) {
+    if (typeof username !== "string" || typeof password !== "string" || !username.trim() || !password) {
       return res.status(400).json({ error: "Username dan Password harus diisi." });
     }
-
-    const targetUser = dbState.users.find(
-      u => u.username.toLowerCase() === username.trim().toLowerCase()
-    );
-
-    if (!targetUser || targetUser.password !== password) {
+    const targetUser = dbState.users.find(user => user.username.toLowerCase() === firstName(username).toLowerCase());
+    if (!targetUser?.passwordHash || !(await passwordMatches(password, targetUser.passwordHash))) {
       return res.status(401).json({ error: "Username atau password salah." });
     }
-
-    if (targetUser.isAdmin) {
-      if ((dbState.adminSessionExpiresAt || 0) > Date.now()) {
-        return res.status(409).json({ error: "Admin sedang login di perangkat lain." });
-      }
-      dbState.adminSessionExpiresAt = Date.now() + 60_000;
-      saveDB();
+    dbState.authTokens = (dbState.authTokens || []).filter(item => item.expiresAt > Date.now());
+    if (targetUser.isAdmin && dbState.authTokens.some(item => item.userId === targetUser.id)) {
+      return res.status(409).json({ error: "Admin sedang login di perangkat lain." });
     }
-
-    const { password: _, ...userSafe } = targetUser;
-    res.json({ user: userSafe });
+    const token = randomBytes(32).toString("base64url");
+    dbState.authTokens.push({
+      tokenHash: hashSessionToken(token),
+      userId: targetUser.id,
+      expiresAt: Date.now() + 12 * 60 * 60 * 1_000
+    });
+    await saveDB();
+    const { passwordHash: _, ...userSafe } = targetUser;
+    res.json({ user: userSafe, token });
   });
 
-  app.post("/api/auth/logout", (req, res) => {
+  app.post("/api/auth/logout", async (req, res) => {
+    const authorization = req.get("authorization");
+    if (!authorization?.startsWith("Bearer ")) return res.status(401).json({ error: "Harap login." });
+    const tokenHash = hashSessionToken(authorization.slice(7));
     const currentUser = getRequestUser(req);
-    if (currentUser?.isAdmin) {
-      dbState.adminSessionExpiresAt = 0;
-      saveDB();
-    }
+    if (!currentUser) return res.status(401).json({ error: "Sesi tidak valid atau telah berakhir." });
+    dbState.authTokens = (dbState.authTokens || []).filter(item => item.tokenHash !== tokenHash);
+    await saveDB();
     res.json({ success: true });
   });
 
-  // Get current state (polling client state)
+  // GET polling is served from an independent PostgreSQL snapshot and never mutates global state.
   app.get("/api/game/state", (req, res) => {
-    const currentUser = getRequestUser(req);
-    if (currentUser?.isAdmin) dbState.adminSessionExpiresAt = Date.now() + 60_000;
-
-    // Tutup ronde otomatis saat waktu habis. Polling pemain menjadi pemicunya.
-    if (
-      dbState.session.phase === "playing" &&
-      dbState.session.currentRound &&
-      Date.now() - dbState.session.currentRound.startTime >= ROUND_DURATION_MS
-    ) {
-      endRound();
-    }
-    
-    // Format users for the leaderboard sorted by score desc
-    const usersSafe = dbState.users.map(({ password: _, ...u }) => u);
-
-    // Format stories: strip answers unless the requesting user is the owner, has solved it, or it's been revealed
-    const storiesSafe = dbState.stories.map(story => {
+    const state = (res.locals.state as DBState | undefined) || dbState;
+    const currentUser = getRequestUser(req, state);
+    const usersSafe = state.users.map(({ password: _, passwordHash: __, ...user }) => user);
+    const storiesSafe = state.stories.map(story => {
       const canSeeAnswer = currentUser && (
-        currentUser.id === story.userId || 
+        currentUser.id === story.userId ||
         story.isSolvedBy.includes(currentUser.id) ||
-        dbState.session.revealedStoryIds.includes(story.id)
+        state.session.revealedStoryIds.includes(story.id)
       );
-      if (canSeeAnswer) {
-        return story;
-      }
-      // Strip answer for guessing safety
-      const { answer, ...storySafe } = story;
-      const isActiveMystery = dbState.session.currentRound?.storyId === story.id;
+      if (canSeeAnswer) return story;
+      const { answer, userId, ...storySafe } = story;
+      const isActiveMystery = state.session.currentRound?.storyId === story.id;
       return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
     });
-
-    res.json({
+    const remainingMs = state.session.currentRound
+      ? Math.max(0, ROUND_DURATION_MS - (Date.now() - state.session.currentRound.startTime))
+      : undefined;
+    const session = state.session.currentRound
+      ? { ...state.session, currentRound: { ...state.session.currentRound, remainingMs } }
+      : state.session;
+    const activeStoryId = state.session.currentRound?.storyId;
+    const body = {
       users: usersSafe,
       stories: storiesSafe,
-      chat: dbState.chat,
-      guessLogs: dbState.guessLogs,
-      session: roundSafeSession(),
-      // After session ended, include results for the requesting player
-      myResults: dbState.session.phase === "ended" && currentUser
-        ? dbState.playerResults.filter(r => r.userId === currentUser.id)
+      chat: state.chat,
+      guessLogs: state.guessLogs.map(log => log.storyId === activeStoryId ? { ...log, targetUsername: "Pemain Misterius" } : log),
+      session,
+      myResults: state.session.phase === "ended" && currentUser
+        ? state.playerResults.filter(result => result.userId === currentUser.id)
         : undefined
-    });
+    };
+    const etag = `"${createHash("sha256").update(JSON.stringify(body)).digest("base64url")}"`;
+    res.set("ETag", etag);
+    res.set("Cache-Control", "no-store");
+    if (req.headers["if-none-match"] === etag) return res.status(304).end();
+    res.json(body);
   });
 
   // Add a story (Wizard 1 + Wizard 2 Submit)
@@ -390,23 +501,18 @@ export async function createApp() {
       return res.status(400).json({ error: "Kamu sudah membuat 2 cerita. Maksimal 2 cerita per pemain." });
     }
 
-    if (!templateId || !blanks || !answer) {
-      return res.status(400).json({ error: "Template, isian cerita, dan jawaban harus lengkap." });
+    if (typeof templateId !== "string" || !Array.isArray(blanks) || blanks.some(blank => typeof blank !== "string") || typeof answer !== "string") {
+      return res.status(400).json({ error: "Template, isian cerita, dan jawaban harus valid." });
     }
-
-    const template = PRESET_TEMPLATES.find(t => t.id === templateId);
+    const template = PRESET_TEMPLATES.find(item => item.id === templateId);
     if (!template) {
       return res.status(400).json({ error: "Template cerita tidak valid." });
     }
-
-    if (!Array.isArray(blanks) || blanks.length !== template.placeholders.length) {
+    if (blanks.length !== template.placeholders.length) {
       return res.status(400).json({ error: `Jumlah kolom isian cerita harus tepat ${template.placeholders.length} kosong.` });
     }
-
-    // Check if any blank is empty
-    const hasEmptyBlank = blanks.some(b => !b || b.trim() === "");
-    if (hasEmptyBlank) {
-      return res.status(400).json({ error: `Semua ${template.placeholders.length} kolom isian cerita harus diisi.` });
+    if (blanks.some(blank => !blank.trim() || blank.length > 500)) {
+      return res.status(400).json({ error: `Semua ${template.placeholders.length} kolom cerita wajib diisi dan maksimal 500 karakter.` });
     }
 
     const trimmedAnswer = firstName(currentUser.username);
@@ -416,7 +522,7 @@ export async function createApp() {
 
     // Create the submitted story
     const newStory: SubmittedStory = {
-      id: "story-" + Math.random().toString(36).substr(2, 9),
+      id: `story-${randomUUID()}`,
       userId: currentUser.id,
       username: currentUser.username,
       templateId: templateId,
@@ -437,7 +543,7 @@ export async function createApp() {
 
     // System announcement in chat
     const systemAnnouncement: ChatMessage = {
-      id: "ann-" + Math.random().toString(36).substr(2, 9),
+      id: `ann-${randomUUID()}`,
       userId: "system",
       username: "System",
       text: `🎉 ${currentUser.username} baru saja memublikasikan cerita misteri baru! Siapa dia sebenarnya? Coba tebak!`,
@@ -475,8 +581,8 @@ export async function createApp() {
       return res.status(401).json({ error: "Harap login untuk menebak." });
     }
     const { storyId, guessText } = req.body;
-    if (!storyId || !guessText) {
-      return res.status(400).json({ error: "Menebak memerlukan id cerita dan teks tebakan." });
+    if (typeof storyId !== "string" || typeof guessText !== "string" || !guessText.trim() || guessText.length > 64) {
+      return res.status(400).json({ error: "Tebakan harus berisi 1–64 karakter." });
     }
 
     const story = dbState.stories.find(s => s.id === storyId);
@@ -495,13 +601,17 @@ export async function createApp() {
       }
       // Time limit check
       const elapsed = Date.now() - dbState.session.currentRound.startTime;
-      if (elapsed > ROUND_DURATION_MS) {
+      if (elapsed >= ROUND_DURATION_MS) {
+        await endRound();
         return res.status(408).json({ error: "Waktu habis! Ronde sudah berakhir." });
       }
     } else {
       return res.status(403).json({ error: "Tidak ada sesi aktif. Tidak bisa menebak sekarang." });
     }
 
+    if (story.userId === currentUser.id) {
+      return res.status(403).json({ error: "Anda tidak dapat menebak cerita sendiri." });
+    }
     if (dbState.guessLogs.some(log => log.userId === currentUser.id && log.storyId === storyId && dbState.session.mysteryIds.includes(log.storyId))) {
       return res.status(400).json({ error: "Anda sudah memakai satu kesempatan pada ronde ini." });
     }
@@ -514,7 +624,7 @@ export async function createApp() {
 
     // Create Guess Log
     const log: GuessLog = {
-      id: "guess-" + Math.random().toString(36).substr(2, 9),
+      id: `guess-${randomUUID()}`,
       userId: currentUser.id,
       username: currentUser.username,
       storyId: storyId,
@@ -556,7 +666,7 @@ export async function createApp() {
 
       // System notification in chat
       const correctAnnouncement: ChatMessage = {
-        id: "ann-" + Math.random().toString(36).substr(2, 9),
+        id: `ann-${randomUUID()}`,
         userId: "system",
         username: "System-Berhasil",
         text: `🎯 Tebakan JITU! ${currentUser.username} menjawab benar dan mendapat +${awardedPoints} poin!`,
@@ -567,10 +677,10 @@ export async function createApp() {
     } else {
       // Wrong guess system notification in chat - let's make it friendly
       const wrongAnnouncement: ChatMessage = {
-        id: "ann-" + Math.random().toString(36).substr(2, 9),
+        id: `ann-${randomUUID()}`,
         userId: "system",
         username: "System-Tebak",
-        text: `❌ Oh tidak! ${currentUser.username} menebak "${guessText.trim()}" untuk cerita ${story.username}, tapi salah! Coba lagi!`,
+        text: `❌ Oh tidak! ${currentUser.username} menebak "${guessText.trim()}", tapi salah! Coba lagi!`,
         isAdmin: true,
         timestamp: Date.now()
       };
@@ -587,31 +697,31 @@ export async function createApp() {
   });
 
   // Player: mark lobby readiness. A ready player has completed two stories.
-  app.post("/api/game/lobby/ready", (req, res) => {
+  app.post("/api/game/lobby/ready", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || currentUser.isAdmin) return res.status(403).json({ error: "Hanya pemain yang dapat mengubah status siap." });
     if (dbState.session.sessionId && dbState.session.phase !== "ended") return res.status(409).json({ error: "Game sudah berjalan." });
     const storyCount = dbState.stories.filter(story => story.userId === currentUser.id).length;
     if (storyCount < 2) return res.status(400).json({ error: `Lengkapi 2 cerita dulu (${storyCount}/2).` });
     currentUser.isReady = !currentUser.isReady;
-    saveDB();
+    await saveDB();
     res.json({ isReady: currentUser.isReady });
   });
 
   // Post chat message
-  app.post("/api/chat", (req, res) => {
+  app.post("/api/chat", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser) {
       return res.status(401).json({ error: "Anda harus masuk terlebih dahulu untuk mengirim obrolan." });
     }
 
     const { text } = req.body;
-    if (!text || text.trim() === "") {
-      return res.status(400).json({ error: "Pesan tidak boleh kosong." });
+    if (typeof text !== "string" || !text.trim() || text.length > 1_000) {
+      return res.status(400).json({ error: "Pesan wajib diisi dan maksimal 1000 karakter." });
     }
 
     const newMessage: ChatMessage = {
-      id: "msg-" + Math.random().toString(36).substr(2, 9),
+      id: `msg-${randomUUID()}`,
       userId: currentUser.id,
       username: currentUser.username,
       text: text.trim(),
@@ -623,22 +733,22 @@ export async function createApp() {
     if (dbState.chat.length > 200) {
       dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
     }
-
-    saveDB();
+    await saveDB();
     res.json(newMessage);
   });
 
   // Admin Route: Get full stories list (including answers)
   app.get("/api/admin/stories", (req, res) => {
-    const currentUser = getRequestUser(req);
-    if (!currentUser || !currentUser.isAdmin) {
+    const state = (res.locals.state as DBState | undefined) || dbState;
+    const currentUser = getRequestUser(req, state);
+    if (!currentUser?.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak. Rute ini hanya untuk Admin." });
     }
-    res.json(dbState.stories);
+    res.json(state.stories);
   });
 
   // Admin: edit a player. Locked while a game is running so answers stay consistent.
-  app.patch("/api/admin/users/:userId", (req, res) => {
+  app.patch("/api/admin/users/:userId", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser?.isAdmin) return res.status(403).json({ error: "Akses ditolak." });
     if (dbState.session.phase === "playing") {
@@ -650,28 +760,28 @@ export async function createApp() {
 
     const username = typeof req.body.username === "string" ? firstName(req.body.username) : "";
     const password = typeof req.body.password === "string" ? req.body.password.trim() : "";
-    if (username.length < 3) return res.status(400).json({ error: "Nama depan minimal 3 karakter." });
-    if (password && password.length < 4) return res.status(400).json({ error: "Password baru minimal 4 karakter." });
+    if (username.length < 3 || username.length > 32) return res.status(400).json({ error: "Nama depan harus 3–32 karakter." });
+    if (password && (password.length < 4 || password.length > 128)) return res.status(400).json({ error: "Password baru harus 4–128 karakter." });
     if (dbState.users.some(u => u.id !== user.id && u.username.toLowerCase() === username.toLowerCase())) {
       return res.status(400).json({ error: "Nama depan sudah digunakan pemain lain." });
     }
 
     const previousName = user.username;
     user.username = username;
-    if (password) user.password = password;
+    if (password) user.passwordHash = await hashPassword(password);
     dbState.stories.filter(s => s.userId === user.id).forEach(s => { s.username = username; s.answer = username; });
     dbState.chat.filter(m => m.userId === user.id).forEach(m => { m.username = username; });
     dbState.guessLogs.forEach(log => {
       if (log.userId === user.id) log.username = username;
       if (log.targetUsername === previousName) log.targetUsername = username;
     });
-    saveDB();
-    const { password: _, ...safeUser } = user;
+    await saveDB();
+    const { password: _, passwordHash: __, ...safeUser } = user;
     res.json({ user: safeUser });
   });
 
   // Admin: delete a player and every record owned by that player.
-  app.delete("/api/admin/users/:userId", (req, res) => {
+  app.delete("/api/admin/users/:userId", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser?.isAdmin) return res.status(403).json({ error: "Akses ditolak." });
     if (dbState.session.sessionId && dbState.session.phase !== "ended") {
@@ -686,12 +796,13 @@ export async function createApp() {
     dbState.chat = dbState.chat.filter(m => m.userId !== user.id);
     dbState.guessLogs = dbState.guessLogs.filter(log => log.userId !== user.id && !storyIds.includes(log.storyId));
     dbState.playerResults = dbState.playerResults.filter(result => result.userId !== user.id && !storyIds.includes(result.storyId));
-    saveDB();
+    dbState.authTokens = (dbState.authTokens || []).filter(token => token.userId !== user.id);
+    await saveDB();
     res.json({ success: true });
   });
 
   // Admin Route: Reset game
-  app.post("/api/admin/reset", (req, res) => {
+  app.post("/api/admin/reset", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak. Rute ini hanya untuk Admin." });
@@ -707,15 +818,15 @@ export async function createApp() {
     dbState.playerResults = [];
     dbState.chat = [];
     dbState.users.forEach(user => { user.isReady = false; });
-
-    saveDB();
+    dbState.authTokens = (dbState.authTokens || []).filter(token => dbState.users.some(user => user.id === token.userId));
+    await saveDBNow();
     res.json({ success: true, message: "Semua data berhasil direset (users, stories, sessions, chat)." });
   });
 
   // ---------- Session endpoints ----------
 
   // Admin: Start game session (picks up to 25 random stories)
-  app.post("/api/admin/session/start", (req, res) => {
+  app.post("/api/admin/session/start", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -729,13 +840,17 @@ export async function createApp() {
     const players = dbState.users.filter(user => !user.isAdmin);
     players.forEach(user => { user.isEliminated = false; });
 
-    // Pick up to 25 random stories (shuffle + slice)
-    const shuffled = [...allStories].sort(() => Math.random() - 0.5);
+    // Fisher–Yates avoids the biased comparator shuffle and only copies the selected candidates.
+    const shuffled = [...allStories];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomInt(index + 1);
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
     const selected = shuffled.slice(0, Math.min(25, shuffled.length));
 
     dbState.session = {
       phase: "playing",
-      sessionId: "sess-" + Math.random().toString(36).substr(2, 9),
+      sessionId: `sess-${randomUUID()}`,
       mysteryIds: selected.map(s => s.id),
       totalMysteries: selected.length,
       endedAt: null,
@@ -760,7 +875,7 @@ export async function createApp() {
 
     // System announcement
     dbState.chat.push({
-      id: "ann-" + Math.random().toString(36).substr(2, 9),
+      id: `ann-${randomUUID()}`,
       userId: "system",
       username: "System",
       text: "🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!",
@@ -768,38 +883,38 @@ export async function createApp() {
       timestamp: Date.now()
     });
 
-    saveDB();
+    await saveDBNow();
     res.json({ success: true, session: dbState.session });
   });
 
   // Admin: End session
-  app.post("/api/admin/session/end", (req, res) => {
+  app.post("/api/admin/session/end", async (req, res) => {
     const currentUser = getRequestUser(req);
-    if (!currentUser || !currentUser.isAdmin) {
+    if (!currentUser?.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
     }
     if (dbState.session.phase === "idle" && !dbState.session.sessionId) {
       return res.status(400).json({ error: "Tidak ada sesi aktif." });
     }
-
-    endSession();
+    await endSession();
     res.json({ success: true, session: dbState.session });
   });
 
   // Player: Get my results (also available through game/state.myResults)
   app.get("/api/session/results", (req, res) => {
-    const currentUser = getRequestUser(req);
+    const state = (res.locals.state as DBState | undefined) || dbState;
+    const currentUser = getRequestUser(req, state);
     if (!currentUser) return res.status(401).json({ error: "Harap login." });
-    const myResults = dbState.playerResults.filter(r => r.userId === currentUser.id);
-    res.json({ results: myResults, session: dbState.session });
+    const myResults = state.playerResults.filter(result => result.userId === currentUser.id);
+    res.json({ results: myResults, session: state.session });
   });
 
-  function endSession() {
-    if (dbState.session.currentRound) endRound();
+  async function endSession() {
+    if (dbState.session.currentRound) await endRound();
     dbState.session.phase = "ended";
     dbState.session.endedAt = Date.now();
     dbState.session.currentRound = null;
-    saveDB();
+    await saveDBNow();
   }
 
   // Modified reset endpoint — also clears session
@@ -808,7 +923,7 @@ export async function createApp() {
   // ---------- Round endpoints ----------
 
   // Admin: Start a round
-  app.post("/api/admin/round/start", (req, res) => {
+  app.post("/api/admin/round/start", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -836,20 +951,20 @@ export async function createApp() {
     dbState.session.lastRevealed = undefined; // clear previous reveal
 
     dbState.chat.push({
-      id: "ann-" + Math.random().toString(36).substr(2, 9),
+      id: `ann-${randomUUID()}`,
       userId: "system",
       username: "System",
-      text: `⏳ RONDE ${dbState.session.roundIndex + 1}/${dbState.session.totalMysteries} DIMULAI! Tebak siapa karakter ini dalam 15 detik!`,
+      text: `⏳ RONDE ${dbState.session.roundIndex + 1}/${dbState.session.totalMysteries} DIMULAI! Tebak siapa karakter ini dalam 30 detik!`,
       isAdmin: true,
       timestamp: Date.now()
     });
 
-    saveDB();
+    await saveDBNow();
     res.json({ success: true, session: roundSafeSession() });
   });
 
   // Admin: End current round (before timer expires)
-  app.post("/api/admin/round/end", (req, res) => {
+  app.post("/api/admin/round/end", async (req, res) => {
     const currentUser = getRequestUser(req);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Akses ditolak." });
@@ -858,12 +973,26 @@ export async function createApp() {
       return res.status(400).json({ error: "Tidak ada ronde aktif." });
     }
 
-    endRound();
+    await endRound();
+    res.json({ success: true, session: roundSafeSession() });
+  });
+  // Any authenticated player may finalize an elapsed round; server time remains authoritative.
+  app.post("/api/game/round/expire", async (req, res) => {
+    if (!getRequestUser(req)) return res.status(401).json({ error: "Harap login." });
+    const round = dbState.session.currentRound;
+    if (dbState.session.phase !== "playing" || !round) {
+      return res.status(409).json({ error: "Tidak ada ronde aktif." });
+    }
+    if (Date.now() - round.startTime < ROUND_DURATION_MS) {
+      return res.status(409).json({ error: "Waktu ronde belum habis." });
+    }
+    await endRound();
     res.json({ success: true, session: roundSafeSession() });
   });
 
+
   /** Closes the current round, advances roundIndex, reveals answer in chat */
-  function endRound() {
+  async function endRound() {
     const round = dbState.session.currentRound!;
     const story = dbState.stories.find(s => s.id === round.storyId);
 
@@ -873,7 +1002,7 @@ export async function createApp() {
 
     if (story) {
       const storyPreview = story.parts.map((part, index) => part + (story.blanks[index] || "")).join("");
-      dbState.users.forEach(user => {
+      dbState.users.filter(user => !user.isAdmin && user.id !== story.userId).forEach(user => {
         if (!dbState.playerResults.some(result => result.userId === user.id && result.storyId === story.id)) {
           dbState.playerResults.push({
             userId: user.id,
@@ -894,7 +1023,7 @@ export async function createApp() {
       };
 
       dbState.chat.push({
-        id: "ann-" + Math.random().toString(36).substr(2, 9),
+        id: `ann-${randomUUID()}`,
         userId: "system",
         username: "System",
         text: `🔔 Ronde ${round.roundIndex + 1} selesai! Jawaban: "${story.answer}". Persiapan ronde berikutnya...`,
@@ -903,14 +1032,14 @@ export async function createApp() {
       });
     }
 
-    // If no more mysteries, auto-end session
     if (dbState.session.roundIndex >= dbState.session.mysteryIds.length) {
       dbState.session.phase = "ended";
       dbState.session.endedAt = Date.now();
-      saveDB();
-    } else {
-      saveDB();
     }
+    if (dbState.chat.length > 200) {
+      dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
+    }
+    await saveDBNow();
   }
 
   /** Returns session without exposing raw startTime (uses remainingMs) */

@@ -11,6 +11,7 @@ interface ChatRoomProps {
 export default function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomProps) {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -24,13 +25,13 @@ export default function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomP
     if (!inputText.trim() || isSending) return;
 
     setIsSending(true);
+    setSendError(null);
     try {
-      await onSendMessage(inputText);
+      await onSendMessage(inputText.trim());
       setInputText("");
-      // Auto-scroll only when user sends a message
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-    } catch (err) {
-      console.error("Gagal mengirim pesan chat:", err);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Gagal mengirim pesan chat.");
     } finally {
       setIsSending(false);
     }
@@ -158,6 +159,7 @@ export default function ChatRoom({ chat, currentUser, onSendMessage }: ChatRoomP
             <Send className="w-4 h-4" />
           </button>
         </div>
+        {sendError && <p className="mt-2 text-xs font-semibold text-rose-300" role="alert">{sendError}</p>}
       </form>
     </div>
   );

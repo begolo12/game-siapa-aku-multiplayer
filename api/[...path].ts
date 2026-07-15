@@ -4,8 +4,9 @@ let appPromise: Promise<(req: Request, res: Response) => void> | undefined;
 
 export default async function handler(req: Request, res: Response) {
   try {
-    // Vercel packages files under api/ only; load the production server bundle explicitly.
-    appPromise ??= import("../dist/server.cjs").then(({ createApp }) => createApp());
+    // Import source so @vercel/node traces it into this function. The static
+    // builder's dist/ output is not available when the function is built.
+    appPromise ??= import("../server").then(({ createApp }) => createApp());
     const app = await appPromise;
     app(req, res);
   } catch (error) {

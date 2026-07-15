@@ -20,6 +20,7 @@ export default function StoryList({ stories, currentUser, users, session, onGues
   const [filterType, setFilterType] = useState<"playable" | "solved" | "mine" | "all">("playable");
   const [countdown, setCountdown] = useState(ROUND_SECONDS);
   const [readyLoading, setReadyLoading] = useState(false);
+  const [lobbyError, setLobbyError] = useState<string | null>(null);
 
   // Candidate usernames for the autocomplete, including the guesser.
   const candidateUsernames = users
@@ -64,7 +65,11 @@ export default function StoryList({ stories, currentUser, users, session, onGues
     if (!guessText.trim() || !currentUser) return;
 
     setSubmitting((prev) => ({ ...prev, [storyId]: true }));
-    setFeedback((prev) => ({ ...prev, [storyId]: null as any }));
+    setFeedback((prev) => {
+      const next = { ...prev };
+      delete next[storyId];
+      return next;
+    });
 
     try {
       const res = await onGuessStory(storyId, guessText);
@@ -92,10 +97,15 @@ export default function StoryList({ stories, currentUser, users, session, onGues
 
   const toggleReady = async () => {
     setReadyLoading(true);
+    setLobbyError(null);
     try {
       if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
       await onLobbyReady();
-    } catch (err: any) { setFeedback({ lobby: { isCorrect: false, message: err.message } }); } finally { setReadyLoading(false); }
+    } catch (error) {
+      setLobbyError(error instanceof Error ? error.message : "Gagal mengubah status siap.");
+    } finally {
+      setReadyLoading(false);
+    }
   };
 
   const handleGuessChange = (storyId: string, val: string) => {
@@ -148,10 +158,29 @@ export default function StoryList({ stories, currentUser, users, session, onGues
 
   // Lobby keeps submitted stories private until the admin starts the game.
   if (session.phase === "idle" && !session.sessionId) {
+    const canToggleReady = !currentUser?.isAdmin && (currentUser?.submittedCount ?? 0) >= 2;
     return (
       <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-5">
         <p className="text-sm font-bold text-white">Menunggu permainan dimulai</p>
         <p className="mt-1 text-xs text-slate-400">Cerita misteri akan tampil saat admin memulai permainan.</p>
+        {canToggleReady && (
+          <button
+            type="button"
+            onClick={toggleReady}
+            disabled={readyLoading}
+            className={`mt-4 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors disabled:opacity-50 ${
+              currentUser?.isReady
+                ? "border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                : "bg-cyan-600 text-white hover:bg-cyan-500"
+            }`}
+          >
+            {readyLoading ? "Memproses..." : currentUser?.isReady ? "Batalkan status siap" : "Saya siap bermain"}
+          </button>
+        )}
+        {!currentUser?.isAdmin && !canToggleReady && (
+          <p className="mt-3 text-xs font-semibold text-amber-300">Lengkapi 2 cerita untuk menyatakan siap.</p>
+        )}
+        {lobbyError && <p className="mt-3 text-xs font-semibold text-rose-300">{lobbyError}</p>}
       </div>
     );
   }
@@ -261,7 +290,8 @@ export default function StoryList({ stories, currentUser, users, session, onGues
       {/* Stories Grid */}
       <div className="grid grid-cols-1 gap-6">
         {filteredStories.map((story) => {
-          const isMine = story.userId === currentUser?.id;
+          // Active mystery owner IDs are intentionally withheld; the server rejects self-guesses.
+          const isMine = session.phase !== "playing" && story.userId === currentUser?.id;
           const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
           const isStorySolvedByOther = story.isSolvedBy.length > 0;
 
@@ -330,6 +360,10 @@ export default function StoryList({ stories, currentUser, users, session, onGues
                     <span className="font-extrabold text-emerald-300 bg-emerald-500/15 border border-emerald-500/20 px-4 py-1.5 rounded-xl text-center">
                       Jawaban: "{story.answer}"
                     </span>
+                  </div>
+                ) : isMine ? (
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-sm font-semibold text-amber-200">
+                    Ini cerita Anda. Tunggu pemain lain menebaknya.
                   </div>
                 ) : currentUser?.isEliminated ? (
                   <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3 text-sm font-semibold text-rose-200">

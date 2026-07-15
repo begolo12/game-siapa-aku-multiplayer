@@ -13,6 +13,7 @@ interface StoryCreatorProps {
 
 export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory, userStoryCount, userTemplateIds, userStories }: StoryCreatorProps) {
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templateBlanks, setTemplateBlanks] = useState<Record<string, string[]>>({});
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   const [error, setError] = useState<string | null>(null);
@@ -21,20 +22,30 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
   const [submitProgress, setSubmitProgress] = useState<string | null>(null);
   const [editingStory, setEditingStory] = useState<SubmittedStory | null>(null);
 
-  // Fetch templates from API on mount
+  // Fetch templates from API on mount.
   useEffect(() => {
-    fetch("/api/templates")
-      .then((res) => res.json())
-      .then((data: StoryTemplate[]) => {
+    const controller = new AbortController();
+
+    fetch("/api/templates", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Template cerita tidak dapat dimuat.");
+        const data = await response.json() as StoryTemplate[];
+        if (!Array.isArray(data) || data.length === 0) throw new Error("Tidak ada template cerita yang tersedia.");
         setTemplates(data);
-        // Initialize blanks for each template
         const blanksMap: Record<string, string[]> = {};
-        data.forEach((t) => {
-          blanksMap[t.id] = Array(t.placeholders.length).fill("");
+        data.forEach((template) => {
+          blanksMap[template.id] = Array(template.placeholders.length).fill("");
         });
         setTemplateBlanks(blanksMap);
       })
-      .catch((err) => console.error("Error fetching templates:", err));
+      .catch((error) => {
+        if ((error as DOMException).name !== "AbortError") {
+          setError(error instanceof Error ? error.message : "Gagal memuat template cerita.");
+        }
+      })
+      .finally(() => setTemplatesLoading(false));
+
+    return () => controller.abort();
   }, []);
 
   // Which templates still need stories
@@ -51,6 +62,14 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
   };
 
   const validateWizard1 = () => {
+    if (templatesLoading) {
+      setError("Template cerita masih dimuat.");
+      return false;
+    }
+    if (templates.length === 0) {
+      setError("Template cerita tidak tersedia. Coba muat ulang halaman.");
+      return false;
+    }
     // Check all needed templates have all blanks filled
     for (const t of neededTemplates) {
       const blanks = templateBlanks[t.id] || [];
@@ -265,7 +284,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
           <div className="flex justify-end pt-4 border-t border-slate-800/80">
             <button
               onClick={handleNextToWizard2}
-              className="bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 hover:from-pink-600 hover:via-purple-700 hover:to-indigo-700 text-white font-bold text-sm px-6 py-3 rounded-xl flex items-center gap-1.5 transition-all shadow-lg shadow-pink-500/15 cursor-pointer"
+              disabled={templatesLoading || templates.length === 0}
             >
               Lanjut ke Review <ChevronRight className="w-4 h-4" />
             </button>
@@ -319,7 +338,7 @@ export default function StoryCreator({ currentUser, onSubmitStory, onUpdateStory
 
             <button
               onClick={handlePublishAll}
-              disabled={isLoading}
+              disabled={isLoading || templatesLoading || neededTemplates.length === 0}
               className="w-full bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 hover:from-pink-600 hover:via-purple-700 hover:to-indigo-700 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-bold text-sm px-6 py-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg shadow-pink-500/15 cursor-pointer"
             >
               {isLoading ? "Menyimpan..." : editingStory ? "Simpan Perubahan" : `Publikasikan ${neededTemplates.length} Cerita`} <Send className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />

@@ -1,13 +1,39 @@
-import React, { useState, useEffect, useRef } from "react";
-import { User, GameState, SubmittedStory } from "./types";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { GameState, SubmittedStory, User } from "./types";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import ChatRoom from "./components/ChatRoom";
 import StoryCreator from "./components/StoryCreator";
 import StoryList from "./components/StoryList";
 import AdminPanel from "./components/AdminPanel";
-import { LogIn, UserPlus, HelpCircle, AlertCircle, ShieldCheck, Gamepad2, Info } from "lucide-react";
+import { LogIn, UserPlus, AlertCircle, Gamepad2, Info } from "lucide-react";
 
+const emptyGameState = (): GameState => ({
+  users: [],
+  stories: [],
+  chat: [],
+  guessLogs: [],
+  session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] },
+  myResults: undefined
+});
+
+async function readResponseData(response: Response): Promise<any> {
+  const text = await response.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Server mengirim respons yang tidak valid.");
+  }
+}
+
+function authenticationHeaders(token: string | null, json = false) {
+  if (!token) throw new Error("Sesi Anda sudah berakhir. Silakan masuk kembali.");
+  return json
+    ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+    : { Authorization: `Bearer ${token}` };
+}
 export default function App() {
   // Current user session
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -16,120 +42,176 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("guess");
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
 
-  // Game state synced via polling
-  const [gameState, setGameState] = useState<GameState>({
-    users: [],
-    stories: [],
-    chat: [],
-    guessLogs: [],
-    session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] },
-    myResults: undefined
-  });
+  // Game state synced via conditional polling.
+  const [gameState, setGameState] = useState<GameState>(emptyGameState);
 
-  // Auth Inputs
+  // Auth inputs
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Poll intervals ref
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<number | null>(null);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const pollInFlightRef = useRef(false);
+  const activeUserIdRef = useRef<string | null>(null);
+  const authTokenRef = useRef<string | null>(null);
+  const etagRef = useRef<string | null>(null);
+  const expiredRoundRef = useRef<string | null>(null);
 
-  // Restore user session on mount
+  // A user id alone is not a session credential. Older stored values are discarded.
   useEffect(() => {
-    const saved = localStorage.getItem("whoami_user");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.id) {
-          setCurrentUser(parsed);
+    const saved = localStorage.getItem("whoami_session");
+    if (!saved) {
+      localStorage.removeItem("whoami_user");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed?.user?.id && typeof parsed.token === "string" && parsed.token) {
+        authTokenRef.current = parsed.token;
+        setCurrentUser(parsed.user);
+      } else {
+        localStorage.removeItem("whoami_session");
+      }
+    } catch {
+      localStorage.removeItem("whoami_session");
+    }
+  }, []);
+
+  const fetchGameState = useCallback(async (userId: string, force = false) => {
+    const token = authTokenRef.current;
+    if (!token || activeUserIdRef.current !== userId) return;
+
+    if (pollInFlightRef.current) {
+      if (!force) return;
+      pollAbortRef.current?.abort();
+    }
+
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+    pollInFlightRef.current = true;
+
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (etagRef.current) headers["If-None-Match"] = etagRef.current;
+
+      const response = await fetch("/api/game/state", { headers, signal: controller.signal });
+      if (activeUserIdRef.current !== userId) return;
+      if (response.status === 401) {
+        authTokenRef.current = null;
+        etagRef.current = null;
+        localStorage.removeItem("whoami_session");
+        setCurrentUser(null);
+        setGameState(emptyGameState());
+        return;
+      }
+      if (response.status === 304) return;
+      if (!response.ok) {
+        const data = await readResponseData(response);
+        throw new Error(data.error || "Gagal memuat status permainan.");
+      }
+
+      const newEtag = response.headers.get("etag");
+      if (newEtag) etagRef.current = newEtag;
+      const data = await readResponseData(response) as GameState;
+      if (activeUserIdRef.current !== userId) return;
+
+      // An ETag validates the complete response. Do not drop same-length updates.
+      setGameState(data);
+
+      if (data.session.phase === "playing" && data.session.currentRound) {
+        const { storyId, remainingMs } = data.session.currentRound;
+        if (remainingMs > 0) {
+          expiredRoundRef.current = null;
+        } else if (expiredRoundRef.current !== storyId) {
+          expiredRoundRef.current = storyId;
+          void fetch("/api/game/round/expire", {
+            method: "POST",
+            headers: authenticationHeaders(token)
+          }).then((expireResponse) => {
+            if (expireResponse.ok && activeUserIdRef.current === userId) {
+              void fetchGameState(userId, true);
+            }
+          }).catch((error) => console.error("Gagal menutup ronde yang berakhir:", error));
         }
-      } catch (e) {
-        localStorage.removeItem("whoami_user");
+      }
+
+      const matched = data.users.find((user) => user.id === userId);
+      if (matched) {
+        setCurrentUser((previous) => {
+          if (!previous || previous.id !== userId) return previous;
+          if (
+            previous.username === matched.username &&
+            previous.score === matched.score &&
+            previous.solvedCount === matched.solvedCount &&
+            previous.submittedCount === matched.submittedCount &&
+            previous.isAdmin === matched.isAdmin &&
+            previous.isReady === matched.isReady &&
+            previous.isEliminated === matched.isEliminated
+          ) {
+            return previous;
+          }
+          const updated = { ...previous, ...matched };
+          localStorage.setItem("whoami_session", JSON.stringify({ user: updated, token }));
+          return updated;
+        });
+      }
+    } catch (error) {
+      if ((error as DOMException).name !== "AbortError") {
+        console.error("Kesalahan polling game state:", error);
+      }
+    } finally {
+      if (pollAbortRef.current === controller) {
+        pollAbortRef.current = null;
+        pollInFlightRef.current = false;
       }
     }
   }, []);
 
-  // Poll state function — skip update if data unchanged (prevents scroll-jump from unnecessary re-renders)
-  const fetchGameState = async (userId: string) => {
-    try {
-      const res = await fetch("/api/game/state", {
-        headers: {
-          "x-user-id": userId
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-
-        // Shallow compare to skip re-render if nothing changed
-        setGameState((prev) => {
-          if (
-            prev.session.phase === data.session.phase &&
-            prev.session.roundIndex === data.session.roundIndex &&
-            prev.users.length === data.users.length &&
-            prev.stories.length === data.stories.length &&
-            prev.chat.length === data.chat.length &&
-            prev.guessLogs.length === data.guessLogs.length &&
-            JSON.stringify(prev.myResults) === JSON.stringify(data.myResults)
-          ) {
-            return prev;
-          }
-          return data;
-        });
-
-        // Keep current user points updated too if they changed on server
-        if (data.users) {
-          const matched = data.users.find((u: User) => u.id === userId);
-          if (matched) {
-            setCurrentUser((prev) => {
-              if (prev && prev.score !== matched.score) {
-                const updated = { ...prev, ...matched };
-                localStorage.setItem("whoami_user", JSON.stringify(updated));
-                return updated;
-              }
-              return prev;
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Kesalahan polling game state:", err);
-    }
-  };
-
-  // Manage polling when user changes
+  // Poll only while a valid signed-in session is active, and never overlap requests.
   useEffect(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
+    const userId = currentUser?.id;
+    activeUserIdRef.current = userId ?? null;
+    etagRef.current = null;
+
+    if (!userId || !authTokenRef.current) {
+      setGameState(emptyGameState());
+      return;
     }
 
-    if (currentUser) {
-      // Fetch immediately
-      fetchGameState(currentUser.id);
-      
-      // Setup interval every 2 seconds for high responsiveness
-      pollIntervalRef.current = setInterval(() => {
-        fetchGameState(currentUser.id);
-      }, 2000);
-    } else {
-      setGameState({
-        users: [],
-        stories: [],
-        chat: [],
-        guessLogs: [],
-        session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] },
-        myResults: undefined
-      });
-    }
-
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+    const stopPolling = () => {
+      if (pollIntervalRef.current !== null) {
+        window.clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
     };
-  }, [currentUser]);
+    const startPolling = () => {
+      if (document.hidden || pollIntervalRef.current !== null) return;
+      void fetchGameState(userId);
+      pollIntervalRef.current = window.setInterval(() => void fetchGameState(userId), 5_000);
+    };
+    const handleVisibility = () => {
+      if (document.hidden) stopPolling();
+      else startPolling();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    startPolling();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      stopPolling();
+      if (activeUserIdRef.current === userId) {
+        activeUserIdRef.current = null;
+        pollAbortRef.current?.abort();
+        pollAbortRef.current = null;
+        pollInFlightRef.current = false;
+      }
+    };
+  }, [currentUser?.id, fetchGameState]);
 
   // Saat admin memulai ronde, semua pemain langsung melihat cerita aktif.
   useEffect(() => {
@@ -156,193 +238,151 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username.trim(), password })
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Terjadi kesalahan sistem.");
+      const data = await readResponseData(response);
+      if (!response.ok) throw new Error(data.error || "Terjadi kesalahan sistem.");
+      if (!data.user?.id || typeof data.token !== "string" || !data.token) {
+        throw new Error("Server tidak mengembalikan sesi yang valid.");
       }
 
-      if (data.user) {
-        setCurrentUser(data.user);
-        localStorage.setItem("whoami_user", JSON.stringify(data.user));
-        // Reset form
-        setUsername("");
-        setPassword("");
-        setAuthError(null);
-        setActiveTab("guess");
-      }
-    } catch (err: any) {
-      setAuthError(err.message || "Gagal menghubungkan ke server.");
+      authTokenRef.current = data.token;
+      localStorage.setItem("whoami_session", JSON.stringify({ user: data.user, token: data.token }));
+      setCurrentUser(data.user);
+      setUsername("");
+      setPassword("");
+      setActiveTab("guess");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Gagal menghubungkan ke server.");
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleLogout = () => {
-    if (currentUser?.isAdmin) {
-      fetch("/api/auth/logout", { method: "POST", headers: { "x-user-id": currentUser.id }, keepalive: true });
+    const token = authTokenRef.current;
+    if (token) {
+      void fetch("/api/auth/logout", { method: "POST", headers: authenticationHeaders(token) });
     }
+    authTokenRef.current = null;
+    etagRef.current = null;
+    localStorage.removeItem("whoami_session");
     localStorage.removeItem("whoami_user");
     setCurrentUser(null);
     setActiveTab("guess");
   };
 
-  // Game Action: Submit Story
   const handleStorySubmit = async (templateId: string, blanks: string[], answer: string) => {
     if (!currentUser) return;
-
     const response = await fetch("/api/game/story", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": currentUser.id
-      },
+      headers: authenticationHeaders(authTokenRef.current, true),
       body: JSON.stringify({ templateId, blanks, answer })
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Gagal mempublikasikan cerita.");
-    }
-
-    // Refresh state immediately after submission
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal mempublikasikan cerita.");
+    await fetchGameState(currentUser.id, true);
   };
 
   const handleStoryUpdate = async (storyId: string, blanks: string[]) => {
     if (!currentUser) return;
-    const response = await fetch(`/api/game/story/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json", "x-user-id": currentUser.id }, body: JSON.stringify({ blanks }) });
-    const data = await response.json();
+    const response = await fetch(`/api/game/story/${storyId}`, {
+      method: "PUT",
+      headers: authenticationHeaders(authTokenRef.current, true),
+      body: JSON.stringify({ blanks })
+    });
+    const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengubah cerita.");
-    fetchGameState(currentUser.id);
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Game Action: Guess Story
   const handleGuessStory = async (storyId: string, guessText: string) => {
     if (!currentUser) throw new Error("Silakan masuk terlebih dahulu.");
-
     const response = await fetch("/api/game/guess", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": currentUser.id
-      },
+      headers: authenticationHeaders(authTokenRef.current, true),
       body: JSON.stringify({ storyId, guessText })
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Gagal mengirim tebakan.");
-    }
-
-    // Refresh state immediately
-    fetchGameState(currentUser.id);
-    return data; // returns { isCorrect, answer }
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal mengirim tebakan.");
+    await fetchGameState(currentUser.id, true);
+    return data;
   };
 
   const handleLobbyReady = async () => {
     if (!currentUser) return;
-    const response = await fetch("/api/game/lobby/ready", { method: "POST", headers: { "x-user-id": currentUser.id } });
-    const data = await response.json();
+    const response = await fetch("/api/game/lobby/ready", {
+      method: "POST",
+      headers: authenticationHeaders(authTokenRef.current)
+    });
+    const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengubah status siap.");
-    fetchGameState(currentUser.id);
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Game Action: Send Chat Message
   const handleSendMessage = async (text: string) => {
     if (!currentUser) return;
-
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": currentUser.id
-      },
+      headers: authenticationHeaders(authTokenRef.current, true),
       body: JSON.stringify({ text })
     });
-
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || "Gagal mengirim pesan chat.");
-    }
-
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal mengirim pesan chat.");
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Game Action: Reset Game (Admin only)
   const handleResetGame = async () => {
     if (!currentUser?.isAdmin) return;
-
     const response = await fetch("/api/admin/reset", {
       method: "POST",
-      headers: {
-        "x-user-id": currentUser.id
-      }
+      headers: authenticationHeaders(authTokenRef.current)
     });
-
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || "Gagal mereset game.");
-    }
-
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal mereset game.");
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Session Action: Start Session (Admin only)
   const handleStartSession = async () => {
     if (!currentUser?.isAdmin) return;
-    const res = await fetch("/api/admin/session/start", {
+    const response = await fetch("/api/admin/session/start", {
       method: "POST",
-      headers: { "x-user-id": currentUser.id }
+      headers: authenticationHeaders(authTokenRef.current)
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Gagal memulai sesi.");
-    }
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal memulai sesi.");
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Session Action: End Session (Admin only)
   const handleEndSession = async () => {
     if (!currentUser?.isAdmin) return;
-    const res = await fetch("/api/admin/session/end", {
+    const response = await fetch("/api/admin/session/end", {
       method: "POST",
-      headers: { "x-user-id": currentUser.id }
+      headers: authenticationHeaders(authTokenRef.current)
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Gagal mengakhiri sesi.");
-    }
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal mengakhiri sesi.");
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Round Action: Start Round (Admin only)
   const handleStartRound = async () => {
     if (!currentUser?.isAdmin) return;
-    const res = await fetch("/api/admin/round/start", {
+    const response = await fetch("/api/admin/round/start", {
       method: "POST",
-      headers: { "x-user-id": currentUser.id }
+      headers: authenticationHeaders(authTokenRef.current)
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Gagal memulai ronde.");
-    }
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal memulai ronde.");
+    await fetchGameState(currentUser.id, true);
   };
 
-  // Round Action: End Round (Admin only)
   const handleEndRound = async () => {
     if (!currentUser?.isAdmin) return;
-    const res = await fetch("/api/admin/round/end", {
+    const response = await fetch("/api/admin/round/end", {
       method: "POST",
-      headers: { "x-user-id": currentUser.id }
+      headers: authenticationHeaders(authTokenRef.current)
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Gagal mengakhiri ronde.");
-    }
-    fetchGameState(currentUser.id);
+    const data = await readResponseData(response);
+    if (!response.ok) throw new Error(data.error || "Gagal mengakhiri ronde.");
+    await fetchGameState(currentUser.id, true);
   };
 
   return (
@@ -473,8 +513,8 @@ export default function App() {
               <div className="mt-6 pt-6 border-t border-slate-850 flex items-start gap-2.5 text-xs text-slate-400">
                 <Info className="w-4 h-4 text-pink-400 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-slate-200">Akun Admin Pre-Configured:</p>
-                  <p className="mt-1">Username: <code className="font-mono font-bold text-pink-400">admin</code> | Sandi: <code className="font-mono font-bold text-pink-400">admin123</code></p>
+                  <p className="font-semibold text-slate-200">Masuk dengan akun yang terdaftar</p>
+                  <p className="mt-1">Hubungi penyelenggara permainan jika Anda memerlukan akses administrator.</p>
                 </div>
               </div>
             </div>
@@ -588,6 +628,9 @@ export default function App() {
                   users={gameState.users}
                   session={gameState.session}
                   onResetGame={handleResetGame}
+                  authToken={authTokenRef.current ?? ""}
+                  onStartSession={handleStartSession}
+                  onEndSession={handleEndSession}
                   onStartRound={handleStartRound}
                   onEndRound={handleEndRound}
                 />
