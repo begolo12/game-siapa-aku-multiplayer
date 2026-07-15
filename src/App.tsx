@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GameState, SubmittedStory, User, getRoundRemainingMs } from "./types";
+import { GameState, SubmittedStory, User } from "./types";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import ChatRoom from "./components/ChatRoom";
@@ -45,10 +45,6 @@ export default function App() {
 
   // Game state synced via conditional polling.
   const [gameState, setGameState] = useState<GameState>(emptyGameState);
-
-  // Synchronized server clock offset
-  const [serverOffset, setServerOffset] = useState(0);
-  const serverOffsetRef = useRef(0);
 
   // Polling error tracking
   const [pollError, setPollError] = useState(false);
@@ -131,11 +127,6 @@ export default function App() {
       if (activeUserIdRef.current !== userId) return;
 
       setGameState(data);
-      if (data.serverTime) {
-        const offset = data.serverTime - Date.now();
-        setServerOffset(offset);
-        serverOffsetRef.current = offset;
-      }
       setPollError(false);
 
 
@@ -239,7 +230,7 @@ export default function App() {
       }).catch((error) => console.error("Gagal menutup ronde yang berakhir:", error));
     };
 
-    const remainingMs = getRoundRemainingMs(round, Date.now(), serverOffsetRef.current);
+    const remainingMs = round.remainingMs;
     if (remainingMs <= 0) {
       expireRound();
       return;
@@ -317,11 +308,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mempublikasikan cerita.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleStoryUpdate = useCallback(async (storyId: string, blanks: string[]) => {
@@ -334,11 +322,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mengubah cerita.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleGuessStory = useCallback(async (storyId: string, guessText: string) => {
@@ -352,11 +337,6 @@ export default function App() {
     if (!response.ok) throw new Error(data.error || "Gagal mengirim tebakan.");
     if (data.gameState) {
       setGameState(data.gameState);
-      if (data.gameState.serverTime) {
-        const offset = data.gameState.serverTime - Date.now();
-        setServerOffset(offset);
-        serverOffsetRef.current = offset;
-      }
     }
     return { isCorrect: data.isCorrect, answer: data.answer };
   }, [currentUser]);
@@ -370,11 +350,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mengubah status siap.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleSendMessage = useCallback(async (text: string) => {
@@ -387,11 +364,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mengirim pesan chat.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleResetGame = useCallback(async () => {
@@ -403,11 +377,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mereset game.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleRestartSession = useCallback(async () => {
@@ -419,11 +390,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal me-restart sesi.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleStartSession = useCallback(async () => {
@@ -435,11 +403,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal memulai sesi.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleEndSession = useCallback(async () => {
@@ -451,11 +416,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mengakhiri sesi.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleStartRound = useCallback(async () => {
@@ -467,11 +429,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal memulai ronde.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const handleEndRound = useCallback(async () => {
@@ -483,11 +442,8 @@ export default function App() {
     const data = await readResponseData(response) as GameState;
     if (!response.ok) throw new Error((data as any).error || "Gagal mengakhiri ronde.");
     setGameState(data);
-    if (data.serverTime) {
-      const offset = data.serverTime - Date.now();
-      setServerOffset(offset);
-      serverOffsetRef.current = offset;
-    }
+
+
   }, [currentUser]);
 
   const currentUserStories = useMemo(() => {
@@ -664,7 +620,6 @@ export default function App() {
                     session={gameState.session}
                     onGuessStory={handleGuessStory}
                     onLobbyReady={handleLobbyReady}
-                    serverOffset={serverOffset}
                   />
                 </div>
               )}
@@ -758,7 +713,6 @@ export default function App() {
                   onEndSession={handleEndSession}
                   onStartRound={handleStartRound}
                   onEndRound={handleEndRound}
-                  serverOffset={serverOffset}
                 />
               )}
               </div>

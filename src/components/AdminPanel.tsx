@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from "react";
-import { User, SubmittedStory, Session, getRoundRemainingMs } from "../types";
+import { User, SubmittedStory, Session } from "../types";
 import { Shield, Users, RefreshCw, Layers, ShieldAlert, Calendar, Play, Square, Pencil, Trash2, Save, X, MonitorUp } from "lucide-react";
 
 interface AdminPanelProps {
@@ -14,10 +14,9 @@ interface AdminPanelProps {
   onEndSession: () => Promise<void>;
   onStartRound: () => Promise<void>;
   onEndRound: () => Promise<void>;
-  serverOffset?: number;
 }
 
-const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onRestartSession, onStartSession, onEndSession, onStartRound, onEndRound, serverOffset = 0 }: AdminPanelProps) {
+const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onRestartSession, onStartSession, onEndSession, onStartRound, onEndRound }: AdminPanelProps) {
   const [loading, setLoading] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmRestartSession, setConfirmRestartSession] = useState(false);
@@ -30,18 +29,18 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
   const [editPassword, setEditPassword] = useState("");
   const [userSaving, setUserSaving] = useState(false);
   const [presenter, setPresenter] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  const [countdown, setCountdown] = useState(0);
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
-    setNow(Date.now());
-    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
+    setCountdown(Math.ceil(session.currentRound.remainingMs / 1_000));
+    const interval = window.setInterval(() => {
+      setCountdown(prev => Math.max(0, prev - 1));
+    }, 1_000);
     return () => window.clearInterval(interval);
-  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.remainingMs]);
 
-  const roundRemainingMs = session.currentRound
-    ? getRoundRemainingMs(session.currentRound, now, serverOffset)
-    : 0;
+  const roundRemainingMs = countdown * 1_000;
 
   const handleReset = async () => {
     try {

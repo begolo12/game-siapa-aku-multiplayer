@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo, useMemo, useCallback } from "react";
-import { SubmittedStory, User, Session, getRoundRemainingMs } from "../types";
+import { SubmittedStory, User, Session } from "../types";
 import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
 
 const ROUND_SECONDS = 30;
@@ -21,10 +21,9 @@ interface StoryListProps {
   session: Session;
   onGuessStory: (storyId: string, guessText: string) => Promise<{ isCorrect: boolean; answer?: string }>;
   onLobbyReady: () => Promise<void>;
-  serverOffset?: number;
 }
 
-const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady, serverOffset = 0 }: StoryListProps) {
+const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady }: StoryListProps) {
   const [guesses, setGuesses] = useState<{ [storyId: string]: string }>({});
   const [feedback, setFeedback] = useState<{ [storyId: string]: { isCorrect: boolean; message: string } }>({});
   const [submitting, setSubmitting] = useState<{ [storyId: string]: boolean }>({});
@@ -48,17 +47,16 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
     return matched.slice(0, 5);
   }, [candidateUsernames]);
 
-  // Countdown timer for round
-  // Countdown stays accurate from the round's immutable start timestamp.
+  // Countdown timer: snap to server's authoritative remainingMs on each poll,
+  // then tick down locally. All players see the same countdown.
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
-    const updateCountdown = () => {
-      setCountdown(Math.ceil(getRoundRemainingMs(session.currentRound!, Date.now(), serverOffset)/ 1_000));
-    };
-    updateCountdown();
-    const interval = window.setInterval(updateCountdown, 1_000);
+    setCountdown(Math.ceil(session.currentRound.remainingMs / 1_000));
+    const interval = window.setInterval(() => {
+      setCountdown(prev => Math.max(0, prev - 1));
+    }, 1_000);
     return () => window.clearInterval(interval);
-  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime, serverOffset]);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.remainingMs]);
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
