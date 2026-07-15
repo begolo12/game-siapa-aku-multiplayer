@@ -713,49 +713,17 @@ export async function createApp() {
   });
 
   function endSession() {
-    dbState.session.phase = "ended";
-    dbState.session.endedAt = Date.now();
-    dbState.session.currentRound = null;
-    dbState.session.lastRevealed = undefined;
-
-    // Reveal ALL session stories at session end
-    for (const storyId of dbState.session.mysteryIds) {
-      if (!dbState.session.revealedStoryIds.includes(storyId)) {
-        dbState.session.revealedStoryIds.push(storyId);
-      }
-    }
-
-    // Build PlayerAnswer for every player who guessed
-    const players = dbState.users.filter(u => !u.isAdmin && !u.isEliminated);
-    const sessionStories = dbState.stories.filter(s => dbState.session.mysteryIds.includes(s.id));
-
+    dbState.stories = [];
+    dbState.guessLogs = [];
     dbState.playerResults = [];
-    for (const player of players) {
-      for (const story of sessionStories) {
-        const guess = dbState.guessLogs.find(
-          g => g.userId === player.id && g.storyId === story.id
-        );
-        dbState.playerResults.push({
-          userId: player.id,
-          storyId: story.id,
-          correctAnswer: story.answer,
-          playerGuess: guess?.guessText,
-          storyPreview: story.parts.map((part, index) => part + (story.blanks[index] || "")).join(""),
-          isCorrect: guess?.isCorrect ?? false
-        });
-      }
-    }
-
-    // Results retain the completed session; the next lobby starts at zero points.
-    dbState.users.forEach(user => { user.score = 0; });
-
-    dbState.chat.push({
-      id: "ann-" + Math.random().toString(36).substr(2, 9),
-      userId: "system",
-      username: "System",
-      text: `🏁 SESI BERAKHIR! Admin telah mengakhiri sesi. Pemain bisa melihat hasil tebakan mereka.`,
-      isAdmin: true,
-      timestamp: Date.now()
+    dbState.chat = [];
+    dbState.session = { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] };
+    dbState.users.forEach(user => {
+      user.score = 0;
+      user.solvedCount = 0;
+      user.submittedCount = 0;
+      user.isReady = false;
+      user.isEliminated = false;
     });
 
     saveDB();
