@@ -15,6 +15,8 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
   const [stories, setStories] = useState<SubmittedStory[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmEndSession, setConfirmEndSession] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState<User | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
       fetchAdminStories();
       setTimeout(() => setMessage(null), 5000);
     } catch (err: any) {
-      alert(err.message || "Gagal mereset permainan.");
+      setMessage(`❌ ${err.message || "Gagal mereset permainan."}`);
     } finally {
       setLoading(false);
     }
@@ -90,6 +92,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setConfirmEndSession(false);
       setMessage("🏁 Sesi diakhiri! Pemain bisa melihat hasil.");
       fetchAdminStories();
     } catch (err: any) {
@@ -132,12 +135,12 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
   };
 
   const deleteUser = async (user: User) => {
-    if (!window.confirm(`Hapus ${user.username} beserta cerita, chat, dan hasilnya?`)) return;
     setUserSaving(true);
     try {
       const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE", headers: { "x-user-id": currentUser?.id || "" } });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setDeleteCandidate(null);
       setMessage(`${user.username} dihapus.`);
       refreshAll();
     } catch (err: any) { setMessage(`❌ ${err.message}`); }
@@ -164,6 +167,30 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      {confirmEndSession && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="end-session-title">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#2b241c] p-6 shadow-2xl">
+            <h3 id="end-session-title" className="text-lg font-bold text-white">Akhiri sesi sekarang?</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">Ronde aktif akan ditutup. Pemain langsung melihat riwayat cerita serta hasil mereka.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setConfirmEndSession(false)} className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-slate-200 hover:bg-slate-700">Tidak</button>
+              <button onClick={handleEndSession} disabled={sessionLoading} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">{sessionLoading ? "Memproses..." : "Ya, Akhiri Sesi"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteCandidate && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-player-title">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#2b241c] p-6 shadow-2xl">
+            <h3 id="delete-player-title" className="text-lg font-bold text-white">Hapus {deleteCandidate.username}?</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">Cerita, chat, dan hasil milik pemain ini juga akan dihapus.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setDeleteCandidate(null)} className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-slate-200 hover:bg-slate-700">Batal</button>
+              <button onClick={() => deleteUser(deleteCandidate)} disabled={userSaving} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">{userSaving ? "Menghapus..." : "Ya, Hapus"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Title */}
       <div className="bg-gradient-to-r from-red-500/10 via-purple-600/10 to-pink-500/10 border border-red-500/20 p-5 rounded-2xl flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -234,7 +261,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
                 </button>
                 <button
                   id="end-session-btn"
-                  onClick={handleEndSession}
+                  onClick={() => setConfirmEndSession(true)}
                   disabled={sessionLoading}
                   className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
                 >
@@ -263,7 +290,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
                     </button>
                     <button
                       id="end-session-btn"
-                      onClick={handleEndSession}
+                      onClick={() => setConfirmEndSession(true)}
                       disabled={sessionLoading}
                       className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
                     >
@@ -324,7 +351,7 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
           ) : (
             <div key={user.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2.5">
               <div><p className="text-sm font-bold text-white">{user.username}</p><p className="text-[11px] text-slate-500">{user.score} poin · {user.submittedCount} cerita{session.sessionId && user.isEliminated ? " · Gugur" : ""}</p></div>
-              <div className="flex gap-2"><button onClick={() => { setEditingUserId(user.id); setEditName(user.username); setEditPassword(""); }} className="p-2 rounded-lg text-cyan-300 hover:bg-cyan-500/10" aria-label={`Edit ${user.username}`}><Pencil className="w-4 h-4" /></button><button onClick={() => deleteUser(user)} disabled={userSaving} className="p-2 rounded-lg text-rose-300 hover:bg-rose-500/10 disabled:opacity-50" aria-label={`Hapus ${user.username}`}><Trash2 className="w-4 h-4" /></button></div>
+              <div className="flex gap-2"><button onClick={() => { setEditingUserId(user.id); setEditName(user.username); setEditPassword(""); }} className="p-2 rounded-lg text-cyan-300 hover:bg-cyan-500/10" aria-label={`Edit ${user.username}`}><Pencil className="w-4 h-4" /></button><button onClick={() => setDeleteCandidate(user)} disabled={userSaving} className="p-2 rounded-lg text-rose-300 hover:bg-rose-500/10 disabled:opacity-50" aria-label={`Hapus ${user.username}`}><Trash2 className="w-4 h-4" /></button></div>
             </div>
           ))}
           {users.every(u => u.isAdmin) && <p className="text-xs text-slate-500">Belum ada pemain.</p>}
