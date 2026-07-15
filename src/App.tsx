@@ -641,7 +641,8 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
             
             {/* Left Content Area (Tebak Cerita or Buat Cerita) */}
-            {(activeTab !== "guess" || gameState.session.phase === "playing" || gameState.session.lastRevealed) && <div className="lg:col-span-8 space-y-6">
+            {(activeTab !== "guess" || gameState.session.phase === "playing" || gameState.session.lastRevealed) && (
+              <div className="lg:col-span-8 space-y-6">
 
               {/* Active Tab Component */}
               {activeTab === "guess" && (
@@ -756,7 +757,8 @@ export default function App() {
                   serverOffset={serverOffset}
                 />
               )}
-            )}</div>
+              </div>
+            )}
 
             {/* Right Sidebar Area (Leaderboard and Chat) */}
             <div className={`${activeTab === "guess" && gameState.session.phase !== "playing" ? "lg:col-span-12" : "lg:col-span-4"} space-y-6`}>
