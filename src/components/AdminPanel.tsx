@@ -249,15 +249,26 @@ export default function AdminPanel({ currentUser, users, session, onResetGame, o
                   <p className="text-xs text-slate-400 mt-1">
                     Ronde {session.roundIndex + 1} / {session.totalMysteries}. Pemain mendapat 30 detik.
                   </p>
-                  <button
-                    id="start-round-btn"
-                    onClick={onStartRound}
-                    disabled={sessionLoading || session.roundIndex >= session.mysteryIds.length}
-                    className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
-                  >
-                    <Play className="w-3.5 h-3.5 inline mr-1" />
-                    {sessionLoading ? "..." : "Mulai Ronde"}
-                  </button>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      id="start-round-btn"
+                      onClick={onStartRound}
+                      disabled={sessionLoading || session.roundIndex >= session.mysteryIds.length}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
+                    >
+                      <Play className="w-3.5 h-3.5 inline mr-1" />
+                      {sessionLoading ? "..." : "Mulai Ronde"}
+                    </button>
+                    <button
+                      id="end-session-btn"
+                      onClick={handleEndSession}
+                      disabled={sessionLoading}
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
+                    >
+                      <Square className="w-3.5 h-3.5 inline mr-1" />
+                      Akhiri Sesi
+                    </button>
+                  </div>
                 </>
               ) : (
                 <>
