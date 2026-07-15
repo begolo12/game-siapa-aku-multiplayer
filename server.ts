@@ -70,6 +70,7 @@ interface DBState {
   session: Session;
   /** Per-player guesses for ended session results */
   playerResults: PlayerAnswer[];
+  adminSessionExpiresAt?: number;
 }
 
 let dbState: DBState = {
@@ -265,13 +266,31 @@ export async function createApp() {
       return res.status(401).json({ error: "Username atau password salah." });
     }
 
+    if (targetUser.isAdmin) {
+      if ((dbState.adminSessionExpiresAt || 0) > Date.now()) {
+        return res.status(409).json({ error: "Admin sedang login di perangkat lain." });
+      }
+      dbState.adminSessionExpiresAt = Date.now() + 60_000;
+      saveDB();
+    }
+
     const { password: _, ...userSafe } = targetUser;
     res.json({ user: userSafe });
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    const currentUser = getRequestUser(req);
+    if (currentUser?.isAdmin) {
+      dbState.adminSessionExpiresAt = 0;
+      saveDB();
+    }
+    res.json({ success: true });
   });
 
   // Get current state (polling client state)
   app.get("/api/game/state", (req, res) => {
     const currentUser = getRequestUser(req);
+    if (currentUser?.isAdmin) dbState.adminSessionExpiresAt = Date.now() + 60_000;
 
     // Tutup ronde otomatis saat waktu habis. Polling pemain menjadi pemicunya.
     if (

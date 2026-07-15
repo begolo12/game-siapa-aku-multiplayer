@@ -180,6 +180,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (currentUser?.isAdmin) {
+      fetch("/api/auth/logout", { method: "POST", headers: { "x-user-id": currentUser.id }, keepalive: true });
+    }
     localStorage.removeItem("whoami_user");
     setCurrentUser(null);
     setActiveTab("guess");
