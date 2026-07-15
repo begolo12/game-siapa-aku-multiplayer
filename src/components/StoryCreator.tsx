@@ -126,14 +126,14 @@ const StoryCreator = memo(function StoryCreator({ currentUser, onSubmitStory, on
 
     try {
       if (editingStory) {
-        await onUpdateStory(editingStory.id, (templateBlanks[editingStory.templateId] || []).map(b => b.trim()));
+        await onUpdateStory(editingStory.id, (templateBlanks[editingStory.templateId] || []).map(b => (b || "").trim()));
         setEditingStory(null);
         setIsSuccess(true);
         return;
       }
       for (const t of neededTemplates) {
         setSubmitProgress(`Mempublikasikan: ${t.title}...`);
-        const blanks = (templateBlanks[t.id] || []).map((b) => b.trim());
+        const blanks = (templateBlanks[t.id] || []).map((b) => (b || "").trim());
         await onSubmitStory(t.id, blanks, currentUser.username);
       }
       setSubmitProgress(null);

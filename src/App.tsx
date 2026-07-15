@@ -310,10 +310,15 @@ export default function App() {
       headers: authenticationHeaders(authTokenRef.current, true),
       body: JSON.stringify({ templateId, blanks, answer })
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mempublikasikan cerita.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mempublikasikan cerita.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleStoryUpdate = useCallback(async (storyId: string, blanks: string[]) => {
     if (!currentUser) return;
@@ -322,10 +327,15 @@ export default function App() {
       headers: authenticationHeaders(authTokenRef.current, true),
       body: JSON.stringify({ blanks })
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mengubah cerita.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mengubah cerita.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleGuessStory = useCallback(async (storyId: string, guessText: string) => {
     if (!currentUser) throw new Error("Silakan masuk terlebih dahulu.");
@@ -336,9 +346,16 @@ export default function App() {
     });
     const data = await readResponseData(response);
     if (!response.ok) throw new Error(data.error || "Gagal mengirim tebakan.");
-    await fetchGameState(currentUser.id, true);
-    return data;
-  }, [currentUser, fetchGameState]);
+    if (data.gameState) {
+      setGameState(data.gameState);
+      if (data.gameState.serverTime) {
+        const offset = data.gameState.serverTime - Date.now();
+        setServerOffset(offset);
+        serverOffsetRef.current = offset;
+      }
+    }
+    return { isCorrect: data.isCorrect, answer: data.answer };
+  }, [currentUser]);
 
   const handleLobbyReady = useCallback(async () => {
     if (!currentUser) return;
@@ -346,10 +363,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mengubah status siap.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mengubah status siap.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!currentUser) return;
@@ -358,10 +380,15 @@ export default function App() {
       headers: authenticationHeaders(authTokenRef.current, true),
       body: JSON.stringify({ text })
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mengirim pesan chat.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mengirim pesan chat.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleResetGame = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
@@ -369,10 +396,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mereset game.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mereset game.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleRestartSession = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
@@ -380,10 +412,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal me-restart sesi.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal me-restart sesi.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleStartSession = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
@@ -391,10 +428,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal memulai sesi.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal memulai sesi.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleEndSession = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
@@ -402,10 +444,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mengakhiri sesi.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mengakhiri sesi.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleStartRound = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
@@ -413,10 +460,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal memulai ronde.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal memulai ronde.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const handleEndRound = useCallback(async () => {
     if (!currentUser?.isAdmin) return;
@@ -424,10 +476,15 @@ export default function App() {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
-    const data = await readResponseData(response);
-    if (!response.ok) throw new Error(data.error || "Gagal mengakhiri ronde.");
-    await fetchGameState(currentUser.id, true);
-  }, [currentUser, fetchGameState]);
+    const data = await readResponseData(response) as GameState;
+    if (!response.ok) throw new Error((data as any).error || "Gagal mengakhiri ronde.");
+    setGameState(data);
+    if (data.serverTime) {
+      const offset = data.serverTime - Date.now();
+      setServerOffset(offset);
+      serverOffsetRef.current = offset;
+    }
+  }, [currentUser]);
 
   const currentUserStories = useMemo(() => {
     if (!currentUser) return [];
@@ -584,7 +641,7 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
             
             {/* Left Content Area (Tebak Cerita or Buat Cerita) */}
-            {!(activeTab === "guess" && gameState.session.phase !== "playing") && <div className="lg:col-span-8 space-y-6">
+            <div className="lg:col-span-8 space-y-6">
 
               {/* Active Tab Component */}
               {activeTab === "guess" && (
@@ -699,7 +756,7 @@ export default function App() {
                   serverOffset={serverOffset}
                 />
               )}
-            </div>}
+            </div>
 
             {/* Right Sidebar Area (Leaderboard and Chat) */}
             <div className={`${activeTab === "guess" && gameState.session.phase !== "playing" ? "lg:col-span-12" : "lg:col-span-4"} space-y-6`}>

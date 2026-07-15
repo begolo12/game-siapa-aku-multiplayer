@@ -311,6 +311,32 @@ async function saveDB() {
   }
 }
 
+let isSavingState = false;
+let needsSaveState = false;
+
+function triggerBackgroundSave() {
+  if (isSavingState || !needsSaveState) return;
+  isSavingState = true;
+  needsSaveState = false;
+  
+  persistState()
+    .then(() => {
+      isSavingState = false;
+      triggerBackgroundSave();
+    })
+    .catch((err) => {
+      isSavingState = false;
+      console.error("[saveDBBackground] Error persisting state in background:", err);
+      // Retry in 2 seconds
+      setTimeout(triggerBackgroundSave, 2000);
+    });
+}
+
+function saveDBBackground() {
+  needsSaveState = true;
+  triggerBackgroundSave();
+}
+
 async function getStateForRead(bypassCache = false): Promise<{ state: DBState; updatedAt: number }> {
   if (!pool) {
     return { state: dbState, updatedAt: lastLocalUpdate };
@@ -434,7 +460,7 @@ export async function createApp() {
     app.use("/api/session/results", loadReadState);
 
     app.use("/api", async (req, res, next) => {
-      if (req.method === "GET") return next();
+      if (req.method === "GET" || req.path === "/chat" || req.originalUrl === "/api/chat") return next();
       const client = await pool.connect();
       let settled = false;
       let originalStateBackup = "";
@@ -491,6 +517,34 @@ export async function createApp() {
     } finally {
       dbState = previousState;
     }
+  };
+
+  const getSafeGameState = (currentUser: User | null, state = dbState) => {
+    const usersSafe = state.users.map(({ password: _, passwordHash: __, ...user }) => user);
+    const activeStoryId = state.session.currentRound?.storyId;
+    const storiesSafe = state.stories.map(story => {
+      const canSeeAnswer = currentUser && (
+        currentUser.isAdmin ||
+        currentUser.id === story.userId ||
+        story.isSolvedBy.includes(currentUser.id) ||
+        state.session.revealedStoryIds.includes(story.id)
+      );
+      if (canSeeAnswer) return story;
+      const { answer, userId, ...storySafe } = story;
+      const isActiveMystery = activeStoryId === story.id;
+      return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
+    });
+    return {
+      users: usersSafe,
+      stories: storiesSafe,
+      chat: state.chat,
+      guessLogs: state.guessLogs.map(log => log.storyId === activeStoryId ? { ...log, targetUsername: "Pemain Misterius" } : log),
+      session: state.session,
+      myResults: state.session.phase === "ended" && currentUser
+        ? state.playerResults.filter(result => result.userId === currentUser.id)
+        : undefined,
+      serverTime: Date.now()
+    };
   };
 
   // Authentication uses a server-issued opaque bearer token; never trust a client-supplied user id.
@@ -599,34 +653,7 @@ export async function createApp() {
     res.set("Cache-Control", "no-store");
     if (req.headers["if-none-match"] === etag) return res.status(304).end();
 
-    const usersSafe = state.users.map(({ password: _, passwordHash: __, ...user }) => user);
-    const storiesSafe = state.stories.map(story => {
-      const canSeeAnswer = currentUser && (
-        currentUser.isAdmin ||
-        currentUser.id === story.userId ||
-        story.isSolvedBy.includes(currentUser.id) ||
-        state.session.revealedStoryIds.includes(story.id)
-      );
-      if (canSeeAnswer) return story;
-      const { answer, userId, ...storySafe } = story;
-      const isActiveMystery = state.session.currentRound?.storyId === story.id;
-      return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
-    });
-    // Keep this payload stable between writes so conditional polling can return 304.
-    // The client derives its countdown from the immutable round start time.
-    const session = state.session;
-    const activeStoryId = state.session.currentRound?.storyId;
-    const body = {
-      users: usersSafe,
-      stories: storiesSafe,
-      chat: state.chat,
-      guessLogs: state.guessLogs.map(log => log.storyId === activeStoryId ? { ...log, targetUsername: "Pemain Misterius" } : log),
-      session,
-      myResults: state.session.phase === "ended" && currentUser
-        ? state.playerResults.filter(result => result.userId === currentUser.id)
-        : undefined,
-      serverTime: Date.now()
-    };
+    const body = getSafeGameState(currentUser, state);
     res.json(body);
   });
 
@@ -702,7 +729,7 @@ export async function createApp() {
     dbState.chat.push(systemAnnouncement);
 
     await saveDB();
-    res.json({ success: true, storyId: newStory.id });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Player: edit own story before the admin starts the session.
@@ -720,7 +747,7 @@ export async function createApp() {
     }
     story.blanks = blanks.map(blank => blank.trim());
     await saveDB();
-    res.json({ success: true });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Post a guess
@@ -847,7 +874,8 @@ export async function createApp() {
     }
 
     await saveDB();
-    res.json({ isCorrect, answer: isCorrect ? story.answer : undefined });
+    const body = getSafeGameState(currentUser);
+    res.json({ isCorrect, answer: isCorrect ? story.answer : undefined, gameState: body });
   }));
 
   // Player: mark lobby readiness. A ready player has completed two stories.
@@ -859,7 +887,7 @@ export async function createApp() {
     if (storyCount < 2) return res.status(400).json({ error: `Lengkapi 2 cerita dulu (${storyCount}/2).` });
     currentUser.isReady = !currentUser.isReady;
     await saveDB();
-    res.json({ isReady: currentUser.isReady });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Post chat message
@@ -887,8 +915,11 @@ export async function createApp() {
     if (dbState.chat.length > 200) {
       dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
     }
-    await saveDB();
-    res.json(newMessage);
+    
+    saveDBBackground();
+    
+    const body = getSafeGameState(currentUser);
+    res.json(body);
   }));
 
   // Admin Route: Get full stories list (including answers)
@@ -979,7 +1010,7 @@ export async function createApp() {
       roundTimeoutTimer = null;
     }
     await saveDB();
-    res.json({ success: true, message: "Semua data berhasil direset (users, stories, sessions, chat)." });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Admin Route: Restart session (keeps users and stories, resets scores/guesses/chat)
@@ -1015,7 +1046,7 @@ export async function createApp() {
     }
     
     await saveDB();
-    res.json({ success: true, message: "Sesi berhasil di-restart! Akun pemain dan cerita tetap aman." });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // ---------- Session endpoints ----------
@@ -1080,7 +1111,7 @@ export async function createApp() {
 
     scheduleServerRoundExpiry();
     await saveDB();
-    res.json({ success: true, session: dbState.session });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Admin: End session
@@ -1093,7 +1124,7 @@ export async function createApp() {
       return res.status(400).json({ error: "Tidak ada sesi aktif." });
     }
     await endSession();
-    res.json({ success: true, session: dbState.session });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Player: Get my results (also available through game/state.myResults)
@@ -1162,7 +1193,7 @@ export async function createApp() {
 
     scheduleServerRoundExpiry();
     await saveDB();
-    res.json({ success: true, session: roundSafeSession() });
+    res.json(getSafeGameState(currentUser));
   }));
 
   // Admin: End current round (before timer expires)
@@ -1176,11 +1207,12 @@ export async function createApp() {
     }
 
     await endRound();
-    res.json({ success: true, session: roundSafeSession() });
+    res.json(getSafeGameState(currentUser));
   }));
   // Any authenticated player may finalize an elapsed round; server time remains authoritative.
   app.post("/api/game/round/expire", asyncHandler(async (req, res) => {
-    if (!getRequestUser(req)) return res.status(401).json({ error: "Harap login." });
+    const currentUser = getRequestUser(req);
+    if (!currentUser) return res.status(401).json({ error: "Harap login." });
     const round = dbState.session.currentRound;
     if (dbState.session.phase !== "playing" || !round) {
       return res.status(409).json({ error: "Tidak ada ronde aktif." });
@@ -1189,7 +1221,7 @@ export async function createApp() {
       return res.status(409).json({ error: "Waktu ronde belum habis." });
     }
     await endRound();
-    res.json({ success: true, session: roundSafeSession() });
+    res.json(getSafeGameState(currentUser));
   }));
 
 

@@ -173,7 +173,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
   if (session.phase === "idle" && !session.sessionId) {
     const canToggleReady = !currentUser?.isAdmin && (currentUser?.submittedCount ?? 0) >= 2;
     return (
-      <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-5">
+      <div className="min-h-[360px] rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-5">
         <p className="text-sm font-bold text-white">Menunggu permainan dimulai</p>
         <p className="mt-1 text-xs text-slate-400">Cerita misteri akan tampil saat admin memulai permainan.</p>
         {canToggleReady && (
