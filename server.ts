@@ -534,13 +534,14 @@ export async function createApp() {
       const isActiveMystery = activeStoryId === story.id;
       return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
     });
+    const safeSession = roundSafeSession(state.session);
     return {
       users: usersSafe,
       stories: storiesSafe,
       chat: state.chat,
       guessLogs: state.guessLogs.map(log => log.storyId === activeStoryId ? { ...log, targetUsername: "Pemain Misterius" } : log),
-      session: state.session,
-      myResults: state.session.phase === "ended" && currentUser
+      session: safeSession,
+      myResults: safeSession.phase === "ended" && currentUser
         ? state.playerResults.filter(result => result.userId === currentUser.id)
         : undefined,
       serverTime: Date.now()
@@ -1288,15 +1289,13 @@ export async function createApp() {
     await saveDB();
   }
 
-  /** Returns session without exposing raw startTime (uses remainingMs) */
-  function roundSafeSession() {
-    const s = { ...dbState.session };
+  /** Returns session with fresh remainingMs computed from stored startTime. */
+  function roundSafeSession(session?: Session) {
+    const src = session ?? dbState.session;
+    const s = { ...src, currentRound: src.currentRound ? { ...src.currentRound } : null };
     if (s.currentRound) {
       const elapsed = Date.now() - s.currentRound.startTime;
-      s.currentRound = {
-        ...s.currentRound,
-        remainingMs: Math.max(0, ROUND_DURATION_MS - elapsed)
-      };
+      s.currentRound.remainingMs = Math.max(0, ROUND_DURATION_MS - elapsed);
     }
     return s;
   }

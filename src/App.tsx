@@ -173,6 +173,7 @@ export default function App() {
   }, []);
 
   // Poll only while a valid signed-in session is active, and never overlap requests.
+  // Polls every 2s during active rounds for tight timer sync, 5s otherwise.
   useEffect(() => {
     const userId = currentUser?.id;
     activeUserIdRef.current = userId ?? null;
@@ -183,6 +184,9 @@ export default function App() {
       return;
     }
 
+    const phase = gameState.session.phase;
+    const pollIntervalMs = phase === "playing" ? 2_000 : 5_000;
+
     const stopPolling = () => {
       if (pollIntervalRef.current !== null) {
         window.clearInterval(pollIntervalRef.current);
@@ -192,7 +196,7 @@ export default function App() {
     const startPolling = () => {
       if (document.hidden || pollIntervalRef.current !== null) return;
       void fetchGameState(userId);
-      pollIntervalRef.current = window.setInterval(() => void fetchGameState(userId), 5_000);
+      pollIntervalRef.current = window.setInterval(() => void fetchGameState(userId), pollIntervalMs);
     };
     const handleVisibility = () => {
       if (document.hidden) stopPolling();
@@ -212,7 +216,7 @@ export default function App() {
         pollInFlightRef.current = false;
       }
     };
-  }, [currentUser?.id, fetchGameState]);
+  }, [currentUser?.id, gameState.session.phase, fetchGameState]);
 
   // A round's start time is immutable, so expiry can be scheduled locally without
   // making each five-second state poll a unique response.

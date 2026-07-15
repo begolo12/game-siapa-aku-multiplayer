@@ -20,20 +20,22 @@ const ChatRoom = memo(function ChatRoom({ chat, currentUser, onSendMessage }: Ch
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom on mount
+  // Scroll chat container (not the page) to bottom on mount
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "auto" });
+    const container = chatContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, []);
 
-  // Smart scroll to bottom on new messages
+  // Smart scroll of chat container only (not the page) on new messages
   useEffect(() => {
     const container = chatContainerRef.current;
     if (!container) return;
-    
-    // Check if user is already near bottom (within 120px) to auto-scroll
+
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
     if (isNearBottom) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      container.scrollTop = container.scrollHeight;
     }
   }, [chat.length]);
 
