@@ -3,34 +3,694 @@
     {
       "id": "u-m0jeisn9e",
       "username": "admin",
-      "password": "admin123",
       "score": 0,
       "solvedCount": 0,
       "submittedCount": 0,
-      "isAdmin": true
+      "isAdmin": true,
+      "isReady": false,
+      "isEliminated": false,
+      "passwordHash": "2c0548da364733ab0f884f3bf0f50f34:0452fd19195ddd2dd17ac13b86d0b4280d1e12460475bd26291fa4a5d3b2da6e4b6961f0377251ff9ee9ab22119de98e559594b8df74e80ef68bcf3f64799c82"
     },
     {
       "id": "u-xuf284svb",
       "username": "TestRepro",
-      "password": "test1234",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isReady": false,
+      "isEliminated": false,
+      "passwordHash": "005af4429b69dca29bc672b79f2e9d04:92eafe12447b96f214e18f6952378a914f2f9210722d2d9223f73513fd03b33fc70f4e9a1a3d596fca3cd7eb4f56ac1ad6ef05514f2042d8b1d066eba63ccca0"
+    },
+    {
+      "id": "u-332d6789-beef-4ab4-bccc-c65eeda9d96c",
+      "username": "load17841379378418845240",
+      "passwordHash": "3c4c50bf79c36c7661b389ea6134bfa5:22a5d4f0e24a46b30ed40ce176fc01420b6c0b8dd454b5171763f4c213612f88dd16e3db3f89d6c670800e638b6aa14dfe34f1f871835147d8202ee941a9d7d8",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 1,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-9af8a4da-02a4-4c66-91e5-cbecc6ee9ddd",
+      "username": "load17841379378418845241",
+      "passwordHash": "5f6b483bd68960feb8009cac6f650c33:234c85476f59335b0ae6cedb6857cbe95b046a56065c8ff2474baded37b9336a111db2926b0b79e47e29a4622d8b0cdb7b5aa7fef908f7e701d418680a959350",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-f4c67934-1a50-48b1-bdda-4257f82f631d",
+      "username": "load17841379378418845242",
+      "passwordHash": "8d0374393aa45a442dc1261c809668d9:69d2b2d1dd0d423386dc64c19cd043880a6babdb756c33135a1a4a3677269027c093074d3b3688e31658322b11d9d7312b607db2bd61b85afe98073d79d8fcb5",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-fb45854e-3a23-450f-827d-67ee5685f4fa",
+      "username": "load17841379378418845243",
+      "passwordHash": "46837640765097d85c77b8a847912a1b:91e101395ed3065ecb5a2ff315bc4735bbf8bcb0100e45f86827a36193433f52b969baf422e36dafcd3b3de2be7f575c211fb92655c1c537044ded2dcad56239",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-3cbab33c-971a-4d79-bbd9-1a501ab9f41f",
+      "username": "load17841379378418845244",
+      "passwordHash": "53a08db32be0cf18c80b36b9d9c0dcde:7aaa15e9a703f753810468c889b4693a634f2dc3f857fbf7746c7f7637bef0ec260fdf99589d3b10fb6ffdc1ed77052ad7e5acd1c098d10356fc48e2d015d384",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-e2fbc5da-b6e6-40d6-a9bd-54e3f7ca0be0",
+      "username": "load17841379378418845245",
+      "passwordHash": "3d2c25a7f9dc3dbcfd700755f6b36e16:da0ce74c801a1bd62aba22b418b8499d99c799da2a20257699d7839cc87507446bcb093fde72b2ff0f6223a89de6a45b4ccb70cc59db851045464ac0ce2dd11f",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-2d1199ca-d88b-450d-a28b-3cadfc8cf0c7",
+      "username": "load17841379378418845246",
+      "passwordHash": "bf5a18622c7b7a4ecbd26706c06fc429:0d116e2e01dd32fbd7ff1dfda787fadf64221ee908ad75c6598de482504e6db511d34bfa20b711b7c57344de7046d614fb081de1714788b851865e8b30ee34fe",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-a564c5da-e338-4217-9c97-a05b6abc2e54",
+      "username": "load17841379378418845247",
+      "passwordHash": "c5d6fe3137f1ab50f1623a50a47b6f88:f1fd0c7a01688801015f4396afff0c704f498644dfc7aaaa433cf8592ad9325acf75ee6f106d9c07731fdd47345fb5eeacc803600585af6408e9110f854625a4",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-064cb287-55e9-4714-b4ee-f707156acd6a",
+      "username": "load17841379378418845248",
+      "passwordHash": "bddaacec7781e4fe2921283ab5981bf1:24e4b1d3d184e1358bdbf5366ca99eb1d412935335379c86f3c83cd8e9247b7a030aa9a92e47e621824bb124c97f530708bc0f1e2620f8b8ab3efa027ac0d860",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-76310268-9662-4d75-ace8-b8d338eb48f3",
+      "username": "load17841379378418845249",
+      "passwordHash": "080284de8b88f8ddc0defd5affad94a1:6755d70cc19deebcdf7b519168322739bb8cb578552c8240c9b5d39a4e13260b9d6d7f6b34ea5671335e29b2c5ca8f721a9fffd6ac9a2c1695d22c2722071246",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-0d15967c-49f3-4004-b374-9158b8a872c1",
+      "username": "load178413793784188452410",
+      "passwordHash": "401855147ead3b485f57ad226829ab41:19d4527fa465adb4b8dd141a0ac2754e1e5b27ec97185489e5c768c22a01012fa52af24b66c36ff7cab6ba8c15426c3b1fd52df7eab33a8e5aab0e9f7b68adc2",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-83610daf-1b72-474d-aada-bf868e598f10",
+      "username": "load178413793784188452411",
+      "passwordHash": "aad489dba4c3b69625b48e743c1872b0:7bc9995215e09329533683f40901276e41fc9b0266382316e7612c8b8f6d3fbb894deaea99a8bbca106f746e6ad2733243ea57b915975ae3fe092c0728eb0ef4",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-46d7fdfe-a959-4fd5-af42-5bcf369205c9",
+      "username": "load178413793784188452412",
+      "passwordHash": "55a1c6bd53bc5a08c1a43970cfb1bbbd:9c945bbccbee2bd8dc2c6cbe8a37ba9d9462a8ee78ee6015664ab8ad7e2939b48678fd080d0fd680d1d33eb8176550ed2b3cd2868a9af9369d59cbb4f0a049a3",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-6ac95fe6-ca34-47ac-8749-5bd00c78182d",
+      "username": "load178413793784188452413",
+      "passwordHash": "30acb3d998f314a53aba46eeaf0edf4e:2e93bbe6a79b2f246b897925f1da1e718d40edac4df4f938dc0a5a9f2ce047f38d95d70c47af2ad85b569befe13f2f778d01c48cd6c7f8fd7a78e173083f7bc4",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-e784b8a4-1354-455f-a137-947382e36de1",
+      "username": "load178413793784188452414",
+      "passwordHash": "79e1007220ac1995a4634f5f46cefc3d:b689d21ff38085f2b14aedbbd209079cdc22b69a160923761535b813c6c18d9fff7e58a578b71003f0fa5c8ce681e9dd807140f923385b45dcf1f1d380f3c525",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-4cad6158-99cd-4489-98ed-6c70824a6ef0",
+      "username": "load178413793784188452415",
+      "passwordHash": "9ecdc4e39e5ffe65703019fb2077fd70:a78f3690da2c455b89a6e1ea78dd974211fe42de4b2927891aa536dc2bed4570b2096b53e51383c36949620cc3d4f27f305cc4ee5ea846bd52c005fff939a610",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-7fa6e33d-c36c-4ee9-a670-9258d26f34dc",
+      "username": "load178413793784188452416",
+      "passwordHash": "5a1b8de7365980674a95ef6d28156ae2:7d2518672bb8fde098dd15c2122ea7b9d45a1c7b929a0a79734e562ed4f8cb807b12e5d3bfc10de9f6e1764d4b63c3f3cf1ef36d3eba789b153781b45589ee36",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-b827f499-6430-4803-861d-a67f9c424652",
+      "username": "load178413793784188452417",
+      "passwordHash": "eeb96423a49e6ae703eccad9a69f6156:f4b0486c13c98120544ed34f0a49dc403d07dc5a61253e1c0814c0d2f613c84fbe1d736a6e073dba577db983a4a013fef8006fb499e316b44f9ac2bd05e9f373",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-366f2a00-897d-4625-9070-510bb8bc1caf",
+      "username": "load178413793784188452418",
+      "passwordHash": "e456dfc678271404fd3e1e7a1e9b9506:70bd4573079eb68596a32491dfceea7292db9e56e8bbfd48e42effb9ed0e8e17f0de1210d2b53c523f4c3138dd2ad56270dac2ee895828c7f94291338f1ae854",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-8848d448-a402-42b3-a1f1-81d3422af9af",
+      "username": "load178413793784188452419",
+      "passwordHash": "5884a9efc182050e2d9c193a76b7371a:2367bba0ef587ebf0cce988719e5b84fdf46b15e18706e47a734e13d9e13bba3073a4a894492c41460b7a733a579fa05c5ae04b2ac39cc23afa75f61de7a6772",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false,
+      "isEliminated": false,
+      "isReady": false
+    },
+    {
+      "id": "u-e4f8373b-48bc-47f9-ac97-2ff127638e4b",
+      "username": "etag178413817375100811",
+      "passwordHash": "48f95382578130b1044586933cd5aa8a:916d4cbbd92957f7fdfcbfa98015476c776aec1cbc8e6bedf8871515f653ad0caed8edb7e305b9ba1a11bcb22c22b7109240681ec19e4de060bc238421ffd61a",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-940fc8b6-1bdb-431d-a7f7-fd5b82507eb0",
+      "username": "etag178413817375100810",
+      "passwordHash": "dc6af77e49bc9552c6fa910a735f42d6:48ab99d74ef7c258a8ec691e4c1e8a4f94e850f6134456bd68a64879eb55926e463acb39f13680b46f84a475ae0748214130e892baa76e5ac69b37b6e9dc5c33",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-33e023a8-530c-4718-b17f-c416a6c12f90",
+      "username": "etag17841381737510082",
+      "passwordHash": "13660e92ae2d8ab1d0743a5db32bf864:e3aabceb15bd6c903a65f7a7b09133d01ab2ff1fafbbf7fa92152508447219f930ba83965529f57aefd97858b6d92515715afa0d4db205668671ccccb6962e55",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-190bd48c-4c41-4687-b10d-79b8e7d8dcd1",
+      "username": "etag17841381737510083",
+      "passwordHash": "8ebdb7b6689909026ff5520c15c070df:fa5fb74d32e6968483bedd728a71ce7ce2208ee8fddf32b2e294c69e8c0bc622955a76a50f14fc4dc7ca6087617ee059e98a7d56660c3778f884b32db44a190d",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-c4d83983-2e99-4abd-8a13-d19a55d0b593",
+      "username": "etag178413817375100812",
+      "passwordHash": "d194f545ce1dffff3a2d9073a95d9232:bf9a26653c1a26e8ddf84e6683ca486f9934fa2ed9415984f7044fb7bf61207c5f7c10bd193b3e28f0ea25899aa33e2676b8d4fd02ce3154640c2afefd97f715",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-d9e8a530-d153-41b3-8ca4-7c17e62286f5",
+      "username": "etag17841381737510081",
+      "passwordHash": "239987889aedd327bdb5eac8787420f2:602c0f24bcd06ef98112de72d4e3550777f88d96a0d186f44ccf739cd56915c5365ecf63da8d321a2819e2690245d78b1ea147459ddcb8203cd65d2e6d69b8c6",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-0519a6c1-76cd-4319-8e3f-2b652c89afd7",
+      "username": "etag17841381737510089",
+      "passwordHash": "9252db020ad4a8eecfe6c1d52607a715:f81b5d546ceb7c8818691ca6885ff82da30b8c36347f3e32a9d7b402eda81d17e86d93bc90bc5d6f9e593e95862fcd4b4b391169c88e888db4076237fac15db0",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-0cb166bb-f966-4253-9a6c-f39a0a678292",
+      "username": "etag178413817375100813",
+      "passwordHash": "5787bf8ae7150afbe420be0c55ecaa77:ac1ce3e923c91c5df3b8c197d9410983c3e1754b386df92ffe7631fcd76b27b30206f06125fd71efd595d4a80a32545d9c37836bf6625281ea0a6a4010ec6e41",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-92891ab0-a8d1-45a9-8f04-fc895d062ab9",
+      "username": "etag178413817375100814",
+      "passwordHash": "dcfacfe7de7e965e1104564bf0ea1f6f:44415f1f73d404f884723153337e0532d10f845f556e4962fbfbed5d722182a1c8203cc9bc1718a5ade426f05ae84740509c0e4e474652efc5882d36ddc2b0d3",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-44847c86-da49-4b69-91cb-09b9b4c759ed",
+      "username": "etag178413817375100815",
+      "passwordHash": "a244864970682e795dcbbc2f81dfcb71:51360e9a38411b8dee710d9303f44100e78fd96cb4ec7e6e8925a7d99aea1704b756aaa5d45fa25ab624983311448c9729577bf9d7ada5f2e9642c4fedf5bdbd",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-d87c54f5-8af7-4bb0-b446-83303104e015",
+      "username": "etag17841381737510080",
+      "passwordHash": "b4f664e9c7243cbc90fbbf90d260afb6:7d0e1ba2da0dcc3ba090ccde688d9eb5b8f6d155c83f8b415345db50909654a4646dface15da92c1ce280ad78325917cc2afb2f8f60aa857e098b3a99c5f9103",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-f6aab25b-9a2c-4b3a-b798-c7e86be81ab3",
+      "username": "etag17841381737510084",
+      "passwordHash": "1f1aa67d82fdf044bf6d25b21bfa9f3f:e4e9ff8dd99e9c3fe910eb095be5d0763067a8f029cdcc43afcc07e714b61e067a248e3910033cb42cc733ab042edf6f54fcd3b72e3b71bc6fdc4dd61f740444",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-6a3994cc-4a63-40d3-857c-e0fc04739000",
+      "username": "etag178413817375100817",
+      "passwordHash": "bec332cdca2dfbe4bf63bc7ffa71d9e1:e3aadf7605d4adeaacf5f939e8d7d6dd406e022b4e364b9336043a1d600ce53eeb0905aa8751982c50fc9f37c16642ec364693d365990428731d1ffd4bd66e20",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-13304a4d-97f3-42c4-b8e8-44cfce042c70",
+      "username": "etag178413817375100816",
+      "passwordHash": "12c6875a5a3f53bb6d11ed2c2e0a4fe2:174ef428e69f6eb22432c984a2444a049e24af0b9b7239b01b367a21e707468f29d075338e7cacf0c4be67df2a3bed8bafe52beacfea7aaba8572db74f4e6f35",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-a1ab783f-fd87-491a-8b74-3d1ab2934f03",
+      "username": "etag178413817375100818",
+      "passwordHash": "b8d0aa46df24348dbcf3b78d90783ba9:9bd8b88aaf12564aa98b288bc2fef641c68c7b1350678209bd03db66563d8b4d7554008e292f0d761fc3dbd5d5274e6a378a2e43ebd7a7a27fe4f8e6bc623ca9",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-842015f8-3173-4617-a89a-d96116de627a",
+      "username": "etag17841381737510086",
+      "passwordHash": "aa9be772fb3922c00d5bdddf1a8f6100:6a1c873c1f9f7be0dfc24b8bacd72cab4b6dd68273a8d1cedd38e0780b56de01c2ae11a8f3bcca26f3e3481654645abdf60b333850ddfd2c9525e5d5f9e34c29",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-04d92464-e69b-428b-b314-e48f2b8e6366",
+      "username": "etag17841381737510085",
+      "passwordHash": "832ccce4fc8d2aa16ed3e6a68593cf91:f383485aa2e7f04e9f7472463078e23a39cfea0ce429e02580713cd75f06732fb64349c904954ac0e66bbca1c9986201f74481571f1a497eebc09b8573e713f1",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-d5660c1c-15eb-4cd0-9c21-cd9a323c0ac1",
+      "username": "etag17841381737510087",
+      "passwordHash": "94dcceea64d42d539815fee9c803c411:d0cefa3dce354654a16016cabd7c95103695d5771d00266846c294daea84d628d3efd2df5ccbb73505b1536457908b0ba276c78afe43eb7910c7306b7ef52c44",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-7ac70b7a-db18-494d-bbf4-97ddc891bf28",
+      "username": "etag178413817375100819",
+      "passwordHash": "d8eb32e77002d4e0828930f8fbd98ea2:7e6356ef9dab1312464349e9c0392cc935b95be158500c294c710c5320d0988b557aa0078f43d76602663ad2b1324dde5129d1a84fce0f03e93d18c62f3db033",
+      "score": 0,
+      "solvedCount": 0,
+      "submittedCount": 0,
+      "isAdmin": false
+    },
+    {
+      "id": "u-f04f31fd-adf8-499a-8ea3-b3da8697bd79",
+      "username": "etag17841381737510088",
+      "passwordHash": "222403b566dfba80b4757404f6b993b3:2dfcfd7a34f8ba89cd794c2ad07fd5acc43d29029348c9d8bda8c82166edb583bdcf0089e221f7b586fe1df90aa3b0bde4fddb3ae2a4464f5c8a14e36a2e7882",
       "score": 0,
       "solvedCount": 0,
       "submittedCount": 0,
       "isAdmin": false
     }
   ],
-  "stories": [],
-  "chat": [],
+  "stories": [
+    {
+      "id": "story-1a8f12b3-8ac5-425a-897b-4628c8fcfdc7",
+      "userId": "u-332d6789-beef-4ab4-bccc-c65eeda9d96c",
+      "username": "load17841379378418845240",
+      "templateId": "temp-2",
+      "parts": [
+        "Dalam hubungan interpersonal, aku sangat senang berhadapan dengan orang yang perilakunya ",
+        ".\nSebaliknya, aku paling malas atau ilfeel jika melihat orang yang perilakunya ",
+        ".\nUntuk urusan perut, aku sangat menyukai ",
+        ".\ntetapi aku akan langsung menghindari jika disajikan ",
+        " karena ",
+        ".\n\nNAMA :"
+      ],
+      "blanks": [
+        "ramah",
+        "kasar",
+        "rendang",
+        "petai",
+        "aromanya kuat"
+      ],
+      "answer": "load17841379378418845240",
+      "isSolvedBy": [],
+      "createdAt": 1784137989258
+    }
+  ],
+  "chat": [
+    {
+      "id": "ann-1bcf3a3f-188d-46b3-ab13-db4b3cb04f53",
+      "userId": "system",
+      "username": "System",
+      "text": "🎉 load17841379378418845240 baru saja memublikasikan cerita misteri baru! Siapa dia sebenarnya? Coba tebak!",
+      "isAdmin": true,
+      "timestamp": 1784137989258
+    },
+    {
+      "id": "ann-c682b112-855e-4056-b4f0-5bc835484604",
+      "userId": "system",
+      "username": "System",
+      "text": "🎮 GAME DIMULAI! Cerita pertama sudah tampil. Tebak nama depannya dalam 30 detik!",
+      "isAdmin": true,
+      "timestamp": 1784137989293
+    }
+  ],
   "guessLogs": [],
   "session": {
-    "phase": "idle",
-    "sessionId": null,
-    "mysteryIds": [],
-    "totalMysteries": 0,
+    "phase": "playing",
+    "sessionId": "sess-9e180917-e64d-4766-b5ef-e98b084eeecd",
+    "mysteryIds": [
+      "story-1a8f12b3-8ac5-425a-897b-4628c8fcfdc7"
+    ],
+    "totalMysteries": 1,
     "endedAt": null,
-    "currentRound": null,
+    "currentRound": {
+      "storyId": "story-1a8f12b3-8ac5-425a-897b-4628c8fcfdc7",
+      "startTime": 1784137989293,
+      "remainingMs": 30000,
+      "roundIndex": 0
+    },
     "roundIndex": 0,
     "revealedStoryIds": []
   },
-  "playerResults": []
+  "playerResults": [],
+  "authTokens": [
+    {
+      "tokenHash": "5c782ff889806f6cb5dca58fe7c21e32eaf1a0154b8a416461e5643d0ea3e4c5",
+      "userId": "u-332d6789-beef-4ab4-bccc-c65eeda9d96c",
+      "expiresAt": 1784181137890
+    },
+    {
+      "tokenHash": "4664f4c5c11f5b48918a499ea096619bda43137db88e4d9b4979f6163af7c436",
+      "userId": "u-9af8a4da-02a4-4c66-91e5-cbecc6ee9ddd",
+      "expiresAt": 1784181137933
+    },
+    {
+      "tokenHash": "afae7b7d9da5087e9e903c3022805d79cb35a8ef08dc636b6b70f1d6c91e4b85",
+      "userId": "u-f4c67934-1a50-48b1-bdda-4257f82f631d",
+      "expiresAt": 1784181137962
+    },
+    {
+      "tokenHash": "13dc608ea6eda6dea5b4116de95833be0056b6252afc0634a7875b02be7c335c",
+      "userId": "u-fb45854e-3a23-450f-827d-67ee5685f4fa",
+      "expiresAt": 1784181137998
+    },
+    {
+      "tokenHash": "cb72a07d3b3d30241d8c7a9541145cad5d0c4b46ed7bd31d7fbe752a8d77fb58",
+      "userId": "u-3cbab33c-971a-4d79-bbd9-1a501ab9f41f",
+      "expiresAt": 1784181138034
+    },
+    {
+      "tokenHash": "a342cbcd9bdb22d38bc50f26a401ef999c0262c79bf2952aa19b1085883fe635",
+      "userId": "u-e2fbc5da-b6e6-40d6-a9bd-54e3f7ca0be0",
+      "expiresAt": 1784181138069
+    },
+    {
+      "tokenHash": "870d0dc0bec3c5420c955bffd135f5075c5301e7f16c675e1647a9300c5c6b7c",
+      "userId": "u-2d1199ca-d88b-450d-a28b-3cadfc8cf0c7",
+      "expiresAt": 1784181138098
+    },
+    {
+      "tokenHash": "29306a745a735b0bfd0b3914fff3e6aaea6f3aca187df141454ec4a6d9e3c50c",
+      "userId": "u-a564c5da-e338-4217-9c97-a05b6abc2e54",
+      "expiresAt": 1784181138133
+    },
+    {
+      "tokenHash": "e8edf89d9b49c351b6a2b57d475e1012e8d7c3611183def09d397f67a7c56100",
+      "userId": "u-064cb287-55e9-4714-b4ee-f707156acd6a",
+      "expiresAt": 1784181138163
+    },
+    {
+      "tokenHash": "0f3dee8866d02f697acec0777a47a95dc4a4008275dc5a32089c85473bb615ee",
+      "userId": "u-76310268-9662-4d75-ace8-b8d338eb48f3",
+      "expiresAt": 1784181138201
+    },
+    {
+      "tokenHash": "32463967c1a06a9ef982d0ba9ca2a5e44d1c0cc83454ce1bdd058d6118ddffc6",
+      "userId": "u-0d15967c-49f3-4004-b374-9158b8a872c1",
+      "expiresAt": 1784181138231
+    },
+    {
+      "tokenHash": "9e92f6f6eb0969b70e65284cc12db0cef15fbd6a4cfa2ed4534f5f4607ff3284",
+      "userId": "u-83610daf-1b72-474d-aada-bf868e598f10",
+      "expiresAt": 1784181138260
+    },
+    {
+      "tokenHash": "fec7c20e4c24d7d94173b2b20db8350573a61f2e9bd418880a2c4c5867923570",
+      "userId": "u-46d7fdfe-a959-4fd5-af42-5bcf369205c9",
+      "expiresAt": 1784181138288
+    },
+    {
+      "tokenHash": "9bf401d00080c800da59488a113726b04d92355854f9e20a453eb2919a8a65cc",
+      "userId": "u-6ac95fe6-ca34-47ac-8749-5bd00c78182d",
+      "expiresAt": 1784181138318
+    },
+    {
+      "tokenHash": "2a98139e00beede51788f9235f7495fd40acdf66b83e92eeef6e87cb1383f26a",
+      "userId": "u-e784b8a4-1354-455f-a137-947382e36de1",
+      "expiresAt": 1784181138347
+    },
+    {
+      "tokenHash": "9a416aecd2ec831bdeeac53eab1ef4432f65f77dd77b66604f7d0746fff22de7",
+      "userId": "u-4cad6158-99cd-4489-98ed-6c70824a6ef0",
+      "expiresAt": 1784181138376
+    },
+    {
+      "tokenHash": "7763a5ed5c77bbba67200ac2f4e6563c380aefab4bf902ac7892474f85651e56",
+      "userId": "u-7fa6e33d-c36c-4ee9-a670-9258d26f34dc",
+      "expiresAt": 1784181138404
+    },
+    {
+      "tokenHash": "84c7cd9a23763c9fe297b69a6d95e66dd482aa03fbf2d7734d507e95491f379c",
+      "userId": "u-b827f499-6430-4803-861d-a67f9c424652",
+      "expiresAt": 1784181138439
+    },
+    {
+      "tokenHash": "c9f8bd558461f3a479b61b5aa4a57c3ca9916f4eace5b4ec30fc8d92e0e49064",
+      "userId": "u-366f2a00-897d-4625-9070-510bb8bc1caf",
+      "expiresAt": 1784181138468
+    },
+    {
+      "tokenHash": "b181e279f39cc6ffdebdf0df9255a72da60c626d6e704e525f713b25ad73dec1",
+      "userId": "u-8848d448-a402-42b3-a1f1-81d3422af9af",
+      "expiresAt": 1784181138497
+    },
+    {
+      "tokenHash": "05e6acf234356f8f66e6f24742484ec01093e39c3c6f8810b496ae2b60730fb9",
+      "userId": "u-m0jeisn9e",
+      "expiresAt": 1784181189289
+    },
+    {
+      "tokenHash": "f6b319984ca08b4805480e16c010ec12480b5ad0198e45eb520b10deabda6bbb",
+      "userId": "u-e4f8373b-48bc-47f9-ac97-2ff127638e4b",
+      "expiresAt": 1784181373823
+    },
+    {
+      "tokenHash": "4596a894b3471f6caf3efe11cb0c55f22cadb7773f4c65b6bb91bafdd48edff1",
+      "userId": "u-940fc8b6-1bdb-431d-a7f7-fd5b82507eb0",
+      "expiresAt": 1784181373861
+    },
+    {
+      "tokenHash": "14518bf6e314b6d0079b8776a0a4eb53160de6de0d4f220fdde43266a3e37929",
+      "userId": "u-33e023a8-530c-4718-b17f-c416a6c12f90",
+      "expiresAt": 1784181373899
+    },
+    {
+      "tokenHash": "bcfa1cddfb4deca2d9d90aad9fd84609b9877846a8a6a44b9287a246d530f3ce",
+      "userId": "u-190bd48c-4c41-4687-b10d-79b8e7d8dcd1",
+      "expiresAt": 1784181373947
+    },
+    {
+      "tokenHash": "a4e987bb5a444ea334120554fd366e3a72c5890adbfa48d9da3c5e4654398fb4",
+      "userId": "u-c4d83983-2e99-4abd-8a13-d19a55d0b593",
+      "expiresAt": 1784181373983
+    },
+    {
+      "tokenHash": "093a905b43bf4ae2b75e0c73fd6d4eeb308d7042e07bcc2d255294da27623b8b",
+      "userId": "u-d9e8a530-d153-41b3-8ca4-7c17e62286f5",
+      "expiresAt": 1784181374018
+    },
+    {
+      "tokenHash": "26c14f6ca88bb304bd8b96a93235d8be146b918b3dd357ebf10ae622f56cfff2",
+      "userId": "u-0519a6c1-76cd-4319-8e3f-2b652c89afd7",
+      "expiresAt": 1784181374046
+    },
+    {
+      "tokenHash": "2163ca0160212f65ecac0bc28afe3363cdac7ece391acb9d82730c818f9ba03d",
+      "userId": "u-0cb166bb-f966-4253-9a6c-f39a0a678292",
+      "expiresAt": 1784181374078
+    },
+    {
+      "tokenHash": "965ce628aab34422153fe0247b7d68fb737cb433423343f53c26e8a8578b9cbc",
+      "userId": "u-92891ab0-a8d1-45a9-8f04-fc895d062ab9",
+      "expiresAt": 1784181374114
+    },
+    {
+      "tokenHash": "294a25e58262e4fad1ebbe10c72fb81d893520346e0722eb0e6b4f196854217c",
+      "userId": "u-44847c86-da49-4b69-91cb-09b9b4c759ed",
+      "expiresAt": 1784181374145
+    },
+    {
+      "tokenHash": "a8375f0e6792797956e5be453118e54f3cb1608992843138f3db8fb82c82cf48",
+      "userId": "u-d87c54f5-8af7-4bb0-b446-83303104e015",
+      "expiresAt": 1784181374175
+    },
+    {
+      "tokenHash": "c1d25d7ab8017f0cb482a26d10045ff238fa7af40f41c1723214709e706a3731",
+      "userId": "u-f6aab25b-9a2c-4b3a-b798-c7e86be81ab3",
+      "expiresAt": 1784181374204
+    },
+    {
+      "tokenHash": "49a2b583c3135f592181a51601fef9f37dd4230b8ff96088dd3062bfb607c9f7",
+      "userId": "u-6a3994cc-4a63-40d3-857c-e0fc04739000",
+      "expiresAt": 1784181374233
+    },
+    {
+      "tokenHash": "36f3d20bd5ba6b59e2aa4146a4a3f1036580a0a57b8f0f566bf36c854b6170d2",
+      "userId": "u-13304a4d-97f3-42c4-b8e8-44cfce042c70",
+      "expiresAt": 1784181374262
+    },
+    {
+      "tokenHash": "3807d17901997aa928ba7ab6cbf630310a1960b5aa2c0be6ae1667355adca166",
+      "userId": "u-a1ab783f-fd87-491a-8b74-3d1ab2934f03",
+      "expiresAt": 1784181374291
+    },
+    {
+      "tokenHash": "c38b50c3518e3a2cb95259ba563a1c5c61442d38c1f5b825a6d7d68826ddaa7c",
+      "userId": "u-842015f8-3173-4617-a89a-d96116de627a",
+      "expiresAt": 1784181374324
+    },
+    {
+      "tokenHash": "0a95063a43822579d69a41563d2d9e29b6b9ed166a005e2bb5e2af324fe90503",
+      "userId": "u-04d92464-e69b-428b-b314-e48f2b8e6366",
+      "expiresAt": 1784181374354
+    },
+    {
+      "tokenHash": "60346f08884672e9bc87ea5d84c64bf5684f388e4091f154d13c1a68d34f8396",
+      "userId": "u-d5660c1c-15eb-4cd0-9c21-cd9a323c0ac1",
+      "expiresAt": 1784181374384
+    },
+    {
+      "tokenHash": "01ddbd943098db0060085765bd29bdc81fdc5ff156472bc553e8723df130346a",
+      "userId": "u-7ac70b7a-db18-494d-bbf4-97ddc891bf28",
+      "expiresAt": 1784181374413
+    },
+    {
+      "tokenHash": "04e7612080db3c09074b8349b6cb4e695c9669003b8af9b8c761b53ab980ac6e",
+      "userId": "u-f04f31fd-adf8-499a-8ea3-b3da8697bd79",
+      "expiresAt": 1784181374442
+    }
+  ]
 }

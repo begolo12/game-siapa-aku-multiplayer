@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, SubmittedStory, Session } from "../types";
+import { User, SubmittedStory, Session, getRoundRemainingMs } from "../types";
 import { Shield, Users, RefreshCw, Layers, ShieldAlert, Calendar, Play, Square, Pencil, Trash2, Save, X, MonitorUp } from "lucide-react";
 
 interface AdminPanelProps {
@@ -27,6 +27,7 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
   const [editPassword, setEditPassword] = useState("");
   const [userSaving, setUserSaving] = useState(false);
   const [presenter, setPresenter] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   const fetchAdminStories = () => {
     setLoading(true);
@@ -44,6 +45,17 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
   useEffect(() => {
     if (currentUser?.isAdmin && authToken) fetchAdminStories();
   }, [currentUser?.id, authToken]);
+
+  useEffect(() => {
+    if (session.phase !== "playing" || !session.currentRound) return;
+    setNow(Date.now());
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
+
+  const roundRemainingMs = session.currentRound
+    ? getRoundRemainingMs(session.currentRound, now)
+    : 0;
 
   const handleReset = async () => {
     try {
@@ -242,9 +254,9 @@ export default function AdminPanel({ currentUser, users, session, authToken, onR
             <div className="w-full">
               <h3 className="text-sm font-bold text-white uppercase tracking-wide">Ronde {session.currentRound ? session.currentRound.roundIndex + 1 : "?"} / {session.totalMysteries}</h3>
               <p className="text-xs text-slate-400 mt-1">
-                {session.currentRound && session.currentRound.remainingMs > 0
-                  ? `⏱️ ${Math.ceil(session.currentRound.remainingMs / 1000)} detik tersisa`
-                  : "Pemain sedang menebak. Akhiri ronde untuk melanjutkan."}
+                {roundRemainingMs > 0
+                  ? `⏱️ ${Math.ceil(roundRemainingMs / 1_000)} detik tersisa`
+                  : "Waktu habis. Menunggu status ronde diperbarui."}
               </p>
               <div className="flex gap-2 mt-3">
                 <button

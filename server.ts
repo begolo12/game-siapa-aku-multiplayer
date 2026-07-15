@@ -65,8 +65,8 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const pool = DATABASE_URL
   ? new Pool({
       connectionString: DATABASE_URL,
-      // A serverless instance needs only a few clients; high per-instance pools exhaust Neon under scale-out.
-      max: 5,
+      // Vercel can scale to many instances; one client per instance prevents connection exhaustion.
+      max: process.env.VERCEL ? 1 : 5,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       allowExitOnIdle: true,
@@ -245,9 +245,12 @@ async function initDatabase() {
   await pool.query(`INSERT INTO app_state (id, state) VALUES (TRUE, $1::jsonb) ON CONFLICT (id) DO NOTHING`, [JSON.stringify(dbState)]);
   const result = await pool.query<{ state: DBState }>("SELECT state FROM app_state WHERE id = TRUE");
   dbState = result.rows[0].state;
+  const storedState = JSON.stringify(dbState);
   normalizeDB();
   await migrateLegacyPasswords();
-  await pool.query(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`, [JSON.stringify(dbState)]);
+  if (JSON.stringify(dbState) !== storedState) {
+    await pool.query(`UPDATE app_state SET state = $1::jsonb, updated_at = NOW() WHERE id = TRUE`, [JSON.stringify(dbState)]);
+  }
   console.info("PostgreSQL Neon terhubung.");
 }
 
@@ -484,12 +487,9 @@ export async function createApp() {
       const isActiveMystery = state.session.currentRound?.storyId === story.id;
       return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
     });
-    const remainingMs = state.session.currentRound
-      ? Math.max(0, ROUND_DURATION_MS - (Date.now() - state.session.currentRound.startTime))
-      : undefined;
-    const session = state.session.currentRound
-      ? { ...state.session, currentRound: { ...state.session.currentRound, remainingMs } }
-      : state.session;
+    // Keep this payload stable between writes so conditional polling can return 304.
+    // The client derives its countdown from the immutable round start time.
+    const session = state.session;
     const activeStoryId = state.session.currentRound?.storyId;
     const body = {
       users: usersSafe,

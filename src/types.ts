@@ -52,12 +52,18 @@ export interface GuessLog {
 
 export type GamePhase = "idle" | "playing" | "ended";
 
+export const ROUND_DURATION_MS = 30_000;
+
 export interface SessionRound {
   storyId: string;
   startTime: number;
-  /** Milliseconds remaining (server-calculated), sent to clients */
+  /** Stored duration at round creation; clients derive the live countdown from startTime. */
   remainingMs: number;
   roundIndex: number; // 0-based
+}
+
+export function getRoundRemainingMs(round: SessionRound, now = Date.now()) {
+  return Math.max(0, ROUND_DURATION_MS - (now - round.startTime));
 }
 
 export interface PlayerAnswer {

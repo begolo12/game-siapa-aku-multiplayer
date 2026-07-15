@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { GameState, SubmittedStory, User } from "./types";
+import { GameState, SubmittedStory, User, getRoundRemainingMs } from "./types";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import ChatRoom from "./components/ChatRoom";
@@ -122,22 +122,6 @@ export default function App() {
       // An ETag validates the complete response. Do not drop same-length updates.
       setGameState(data);
 
-      if (data.session.phase === "playing" && data.session.currentRound) {
-        const { storyId, remainingMs } = data.session.currentRound;
-        if (remainingMs > 0) {
-          expiredRoundRef.current = null;
-        } else if (expiredRoundRef.current !== storyId) {
-          expiredRoundRef.current = storyId;
-          void fetch("/api/game/round/expire", {
-            method: "POST",
-            headers: authenticationHeaders(token)
-          }).then((expireResponse) => {
-            if (expireResponse.ok && activeUserIdRef.current === userId) {
-              void fetchGameState(userId, true);
-            }
-          }).catch((error) => console.error("Gagal menutup ronde yang berakhir:", error));
-        }
-      }
 
       const matched = data.users.find((user) => user.id === userId);
       if (matched) {
@@ -212,6 +196,38 @@ export default function App() {
       }
     };
   }, [currentUser?.id, fetchGameState]);
+
+  // A round's start time is immutable, so expiry can be scheduled locally without
+  // making each five-second state poll a unique response.
+  useEffect(() => {
+    const round = gameState.session.phase === "playing" ? gameState.session.currentRound : null;
+    const userId = currentUser?.id;
+    const token = authTokenRef.current;
+    if (!round || !userId || !token) return;
+
+    const expireRound = () => {
+      if (expiredRoundRef.current === round.storyId || activeUserIdRef.current !== userId) return;
+      expiredRoundRef.current = round.storyId;
+      void fetch("/api/game/round/expire", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      }).then((response) => {
+        if (response.ok && activeUserIdRef.current === userId) {
+          void fetchGameState(userId, true);
+        }
+      }).catch((error) => console.error("Gagal menutup ronde yang berakhir:", error));
+    };
+
+    const remainingMs = getRoundRemainingMs(round);
+    if (remainingMs <= 0) {
+      expireRound();
+      return;
+    }
+
+    expiredRoundRef.current = null;
+    const timeout = window.setTimeout(expireRound, remainingMs);
+    return () => window.clearTimeout(timeout);
+  }, [currentUser?.id, fetchGameState, gameState.session.currentRound?.storyId, gameState.session.currentRound?.startTime, gameState.session.phase]);
 
   // Saat admin memulai ronde, semua pemain langsung melihat cerita aktif.
   useEffect(() => {

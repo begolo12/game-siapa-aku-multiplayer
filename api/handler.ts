@@ -1,12 +1,11 @@
 import type { Request, Response } from "express";
-import { createApp } from "../server";
+import { createApp } from "../server.js";
 
 let appPromise: Promise<(req: Request, res: Response) => void> | undefined;
 
 export default async function handler(req: Request, res: Response) {
   try {
-    // Static import makes @vercel/node bundle this dependency. Dynamic import
-    // produced an unresolved /var/task/server path at runtime.
+    // The explicit emitted extension lets Node resolve the bundled server module.
     appPromise ??= createApp();
     const app = await appPromise;
     app(req, res);

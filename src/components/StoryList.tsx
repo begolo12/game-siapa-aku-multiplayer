@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { SubmittedStory, User, Session } from "../types";
+import { SubmittedStory, User, Session, getRoundRemainingMs } from "../types";
 import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer } from "lucide-react";
 
 const ROUND_SECONDS = 30;
@@ -36,15 +36,16 @@ export default function StoryList({ stories, currentUser, users, session, onGues
   };
 
   // Countdown timer for round
+  // Countdown stays accurate from the round's immutable start timestamp.
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
-    setCountdown(Math.ceil(session.currentRound.remainingMs / 1000));
-
-    const interval = setInterval(() => {
-      setCountdown((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [session.phase, session.currentRound?.storyId, session.currentRound?.remainingMs]);
+    const updateCountdown = () => {
+      setCountdown(Math.ceil(getRoundRemainingMs(session.currentRound!)/ 1_000));
+    };
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 1_000);
+    return () => window.clearInterval(interval);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
