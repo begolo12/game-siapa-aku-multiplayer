@@ -113,7 +113,7 @@ function hashSessionToken(token: string) {
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
-  const derived = await scrypt(password, salt, 64, { N: 65536 }) as Buffer;
+  const derived = await scrypt(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }) as Buffer;
   return `${salt}:${derived.toString("hex")}`;
 }
 
@@ -121,7 +121,7 @@ async function passwordMatches(password: string, passwordHash: string) {
   const [salt, encodedHash] = passwordHash.split(":");
   if (!salt || !encodedHash) return false;
   const expected = Buffer.from(encodedHash, "hex");
-  const actual = await scrypt(password, salt, 64) as Buffer;
+  const actual = await scrypt(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }) as Buffer;
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
