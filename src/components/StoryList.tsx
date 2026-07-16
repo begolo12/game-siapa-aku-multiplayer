@@ -1,8 +1,6 @@
 import React, { useState, useEffect, memo, useMemo, useCallback, useRef } from "react";
-import { SubmittedStory, User, Session } from "../types";
+import { getRoundTiming, SubmittedStory, User, Session } from "../types";
 import { CheckCircle2, Send, HelpCircle, Calendar, Filter, User as UserIcon, Sparkles, Timer, Loader2 } from "lucide-react";
-
-const ROUND_SECONDS = 30;
 
 const formatDate = (timestamp: number) => {
   const d = new Date(timestamp);
@@ -22,14 +20,15 @@ interface StoryListProps {
   onGuessStory: (storyId: string, guessText: string) => Promise<{ isCorrect: boolean; answer?: string }>;
   onLobbyReady: () => Promise<void>;
   onRoundReady: () => Promise<void>;
+  serverOffsetMs: number;
 }
 
-const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady, onRoundReady }: StoryListProps) {
+const StoryList = memo(function StoryList({ stories, currentUser, users, session, onGuessStory, onLobbyReady, onRoundReady, serverOffsetMs }: StoryListProps) {
   const [guesses, setGuesses] = useState<{ [storyId: string]: string }>({});
   const [feedback, setFeedback] = useState<{ [storyId: string]: { isCorrect: boolean; message: string } }>({});
   const [submitting, setSubmitting] = useState<{ [storyId: string]: boolean }>({});
   const [filterType, setFilterType] = useState<"playable" | "solved" | "mine" | "all">("playable");
-  const [countdown, setCountdown] = useState(ROUND_SECONDS);
+  const [clockNow, setClockNow] = useState(Date.now());
   const [readyLoading, setReadyLoading] = useState(false);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
 
@@ -48,16 +47,19 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
     return matched.slice(0, 5);
   }, [candidateUsernames]);
 
-  // Countdown timer: snap to server's authoritative remainingMs on each poll,
-  // then tick down locally. All players see the same countdown.
+  // Recompute from the authoritative timestamp; never decrement local state.
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
-    setCountdown(Math.ceil(session.currentRound.remainingMs / 1_000));
-    const interval = window.setInterval(() => {
-      setCountdown(prev => Math.max(0, prev - 1));
-    }, 1_000);
+    setClockNow(Date.now());
+    const interval = window.setInterval(() => setClockNow(Date.now()), 100);
     return () => window.clearInterval(interval);
-  }, [session.phase, session.currentRound?.storyId, session.currentRound?.remainingMs]);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
+
+  const roundTiming = session.currentRound
+    ? getRoundTiming(session.currentRound, clockNow, serverOffsetMs)
+    : null;
+  const countdown = Math.ceil((roundTiming?.remainingMs ?? 0) / 1_000);
+  const isRoundActive = session.phase === "playing" && roundTiming?.state === "active";
 
   // When a round is "armed" (waiting for everyone to load), ack once so the
   // server can start the synchronized 30s countdown for all players at once.
@@ -67,13 +69,13 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       ackedRef.current = false;
       return;
     }
-    if (currentUser?.isAdmin || ackedRef.current) return;
+    if (currentUser?.isAdmin || currentUser?.isEliminated || ackedRef.current) return;
     ackedRef.current = true;
     void onRoundReady();
-  }, [session.phase, session.currentRound?.storyId, currentUser?.isAdmin, onRoundReady]);
+  }, [session.phase, session.currentRound?.storyId, currentUser?.isAdmin, currentUser?.isEliminated, onRoundReady]);
 
   useEffect(() => {
-    if (session.phase !== "playing" || !session.currentRound) return;
+    if (!isRoundActive || !session.currentRound) return;
     document.title = `⏱️ Ronde ${session.currentRound.roundIndex + 1} — Siapa Aku?`;
     if ("Notification" in window && Notification.permission === "granted") {
       const n = new Notification(`Ronde ${session.currentRound.roundIndex + 1} dimulai`, { body: "Cerita baru sudah tampil. Pilih satu jawaban sebelum waktu habis." });
@@ -84,7 +86,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       };
     }
     return () => { document.title = "Siapa Aku? - Multiplayer Detective Game"; };
-  }, [session.phase, session.currentRound?.storyId]);
+  }, [isRoundActive, session.currentRound?.storyId]);
 
   const handlePickSuggestion = (storyId: string, name: string) => {
     setGuesses((prev) => ({ ...prev, [storyId]: name }));
@@ -152,7 +154,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
 
   // Filtering logic + session scope
   const visibleStories = useMemo(() => {
-    return session.phase === "playing" && session.currentRound
+    return (session.phase === "playing" || session.phase === "armed") && session.currentRound
       ? stories.filter(s => s.id === session.currentRound!.storyId)
       : session.lastRevealed
       ? stories.filter(s => s.id === session.lastRevealed!.storyId)
@@ -165,7 +167,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
 
       // During a live round, always render its selected mystery—even for its owner.
-      if (session.phase === "playing" || session.lastRevealed?.storyId === story.id) return true;
+      if (isRoundActive || session.lastRevealed?.storyId === story.id) return true;
 
       if (filterType === "playable") {
         // Stories from others that I have not solved yet
@@ -181,7 +183,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       }
       return true; // "all"
     });
-  }, [visibleStories, currentUser?.id, filterType, session.phase, session.lastRevealed?.storyId]);
+  }, [visibleStories, currentUser?.id, filterType, isRoundActive, session.lastRevealed?.storyId]);
 
   // Lobby keeps submitted stories private until the admin starts the game.
   if (session.phase === "idle" && !session.sessionId) {
@@ -215,7 +217,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
   return (
     <div className="space-y-6">
       {/* Filters hanya berguna di luar ronde */}
-      {session.phase !== "playing" && !session.lastRevealed && <div className="bg-[#2b241c]/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn relative overflow-hidden">
+      {session.phase !== "playing" && session.phase !== "armed" && !session.lastRevealed && <div className="bg-[#2b241c]/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-pink-500/20 to-transparent" />
         <div className="flex items-center gap-2">
           <div className="bg-pink-500/10 p-1.5 rounded-lg border border-pink-500/20">
@@ -286,8 +288,16 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
         </div>
       )}
 
+      {/* Server-scheduled start: every client reveals the mystery at the same epoch. */}
+      {session.phase === "playing" && session.currentRound && roundTiming?.state === "scheduled" && (
+        <div className="bg-gradient-to-r from-cyan-500/10 via-purple-600/10 to-pink-500/10 border border-cyan-500/30 p-5 rounded-2xl text-center animate-glowPulse">
+          <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Semua pemain siap</p>
+          <p className="mt-1 text-3xl font-extrabold text-white">Mulai dalam {Math.ceil((roundTiming.startsInMs ?? 0) / 1_000)}</p>
+        </div>
+      )}
+
       {/* Countdown banner for active round */}
-      {session.phase === "playing" && session.currentRound && session.currentRound.startTime !== null && (
+      {isRoundActive && session.currentRound && (
         <div className="bg-gradient-to-r from-pink-500/10 via-purple-600/10 to-indigo-500/10 border border-pink-500/20 p-4 rounded-2xl flex items-center justify-between animate-glowPulse relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-pink-500/5 to-transparent pointer-events-none" />
           <div className="flex items-center gap-3">
@@ -302,14 +312,14 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
         </div>
       )}
 
-      {session.phase === "playing" && currentUser?.isEliminated && (
+      {isRoundActive && currentUser?.isEliminated && (
         <div className="rounded-2xl border border-rose-500/30 bg-rose-950/30 p-4 text-sm font-semibold text-rose-200">
           Anda gugur pada sesi ini karena belum mengumpulkan 2 cerita sebelum game dimulai.
         </div>
       )}
 
-      {/* Stories Grid */}
-      <div className="grid grid-cols-1 gap-6">
+      {/* Stories Grid: preloaded while armed/scheduled, revealed only at the shared start. */}
+      {(isRoundActive || (session.phase !== "playing" && session.phase !== "armed")) && <div className="grid grid-cols-1 gap-6">
         {filteredStories.map((story) => {
           // Active mystery owner IDs are intentionally withheld; the server rejects self-guesses.
           const isRoundResult = session.phase === "idle" && session.lastRevealed?.storyId === story.id;
@@ -407,7 +417,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
                           type="text"
                           autoComplete="off"
                           placeholder="Pilih satu jawaban nama depan..."
-                          disabled={submitting[story.id]}
+                          disabled={!isRoundActive || submitting[story.id]}
                           value={guesses[story.id] || ""}
                           onChange={(e) => handleGuessChange(story.id, e.target.value)}
                           className="w-full text-sm bg-[#1a150f]/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500"
@@ -416,7 +426,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
                       <button
                         id={`guess-submit-btn-${story.id}`}
                         type="submit"
-                        disabled={submitting[story.id] || !(guesses[story.id] || "").trim()}
+                        disabled={!isRoundActive || submitting[story.id] || !(guesses[story.id] || "").trim()}
                         className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-all shadow-md cursor-pointer shrink-0 flex items-center justify-center gap-1"
                       >
                         Tebak <Send className="w-3.5 h-3.5" />
@@ -477,7 +487,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
             </p>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 });

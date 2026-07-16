@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from "react";
-import { User, SubmittedStory, Session } from "../types";
+import { getRoundTiming, User, SubmittedStory, Session } from "../types";
 import { Shield, Users, RefreshCw, Layers, ShieldAlert, Calendar, Play, Square, Pencil, Trash2, Save, X, MonitorUp, Loader2 } from "lucide-react";
 
 interface AdminPanelProps {
@@ -14,9 +14,10 @@ interface AdminPanelProps {
   onEndSession: () => Promise<void>;
   onStartRound: () => Promise<void>;
   onEndRound: () => Promise<void>;
+  serverOffsetMs: number;
 }
 
-const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onRestartSession, onStartSession, onEndSession, onStartRound, onEndRound }: AdminPanelProps) {
+const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, session, authToken, onResetGame, onRestartSession, onStartSession, onEndSession, onStartRound, onEndRound, serverOffsetMs }: AdminPanelProps) {
   const [loading, setLoading] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmRestartSession, setConfirmRestartSession] = useState(false);
@@ -29,18 +30,17 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
   const [editPassword, setEditPassword] = useState("");
   const [userSaving, setUserSaving] = useState(false);
   const [presenter, setPresenter] = useState(false);
-  const [countdown, setCountdown] = useState(0);
+  const [clockNow, setClockNow] = useState(Date.now());
 
   useEffect(() => {
     if (session.phase !== "playing" || !session.currentRound) return;
-    setCountdown(Math.ceil(session.currentRound.remainingMs / 1_000));
-    const interval = window.setInterval(() => {
-      setCountdown(prev => Math.max(0, prev - 1));
-    }, 1_000);
+    setClockNow(Date.now());
+    const interval = window.setInterval(() => setClockNow(Date.now()), 100);
     return () => window.clearInterval(interval);
-  }, [session.phase, session.currentRound?.storyId, session.currentRound?.remainingMs]);
+  }, [session.phase, session.currentRound?.storyId, session.currentRound?.startTime]);
 
-  const roundRemainingMs = countdown * 1_000;
+  const roundTiming = session.currentRound ? getRoundTiming(session.currentRound, clockNow, serverOffsetMs) : null;
+  const roundRemainingMs = roundTiming?.remainingMs ?? 0;
 
   const handleReset = async () => {
     try {
@@ -253,7 +253,9 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
             <div className="w-full">
               <h3 className="text-sm font-bold text-white uppercase tracking-wide">Ronde {session.currentRound ? session.currentRound.roundIndex + 1 : "?"} / {session.totalMysteries}</h3>
               <p className="text-xs text-slate-400 mt-1">
-                {roundRemainingMs > 0
+                {roundTiming?.state === "scheduled"
+                  ? `Mulai serentak dalam ${Math.ceil((roundTiming.startsInMs ?? 0) / 1_000)} detik`
+                  : roundRemainingMs > 0
                   ? `⏱️ ${Math.ceil(roundRemainingMs / 1_000)} detik tersisa`
                   : "Waktu habis. Menunggu status ronde diperbarui."}
               </p>
@@ -282,7 +284,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
             <div className="w-full">
               <h3 className="text-sm font-bold text-white uppercase tracking-wide">Ronde {session.currentRound ? session.currentRound.roundIndex + 1 : "?"} / {session.totalMysteries}</h3>
               <p className="text-xs text-amber-400 mt-1 flex items-center gap-1.5">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Menunggu pemain selesai memuat…
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat pemain {session.ackedPlayerIds?.length ?? 0}/{session.participantIds.length}
               </p>
             </div>
           ) : session.phase === "idle" ? (
@@ -317,7 +319,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
               ) : (
                 <>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wide">Mulai Game</h3>
-                  <p className="text-xs text-slate-400 mt-1">Satu klik langsung menampilkan cerita pertama ke semua pemain.</p>
+                  <p className="text-xs text-slate-400 mt-1">Hanya pemain berstatus siap yang masuk sesi. Semua mendapat timestamp mulai dan 30 detik yang sama.</p>
                   <button
                     id="start-session-btn"
                     onClick={handleStartSession}

@@ -61,6 +61,7 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
 const DB_FILE = path.join(process.cwd(), "data-store.json");
 const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const ROUND_DURATION_MS = 30_000;
+const ROUND_START_DELAY_MS = 5_000;
 const DATABASE_URL = process.env.DATABASE_URL;
 const pool = DATABASE_URL
   ? new Pool({
@@ -131,7 +132,7 @@ interface DBState {
   authTokens?: { tokenHash: string; userId: string; expiresAt: number }[];
 }
 function emptySession(): Session {
-  return { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [], ackedPlayerIds: [] };
+  return { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [], participantIds: [], ackedPlayerIds: [] };
 }
 
 let dbState: DBState = {
@@ -171,6 +172,8 @@ function normalizeDB() {
   if (!dbState.playerResults) dbState.playerResults = [];
   if (!dbState.session) dbState.session = emptySession();
   if (!dbState.session.revealedStoryIds) dbState.session.revealedStoryIds = [];
+  if (!dbState.session.participantIds) dbState.session.participantIds = [];
+  if (!dbState.session.ackedPlayerIds) dbState.session.ackedPlayerIds = [];
   dbState.authTokens = (dbState.authTokens || []).filter(token => token.expiresAt > Date.now());
   if (dbState.session.lastRevealed === undefined) dbState.session.lastRevealed = undefined;
   dbState.users.forEach(user => {
@@ -783,8 +786,16 @@ export async function createApp() {
       if (dbState.session.currentRound.storyId !== storyId) {
         return res.status(403).json({ error: "Cerita ini tidak aktif di ronde ini." });
       }
-      // Time limit check
-      const elapsed = Date.now() - dbState.session.currentRound.startTime;
+      // Only frozen session participants may guess.
+      if (!dbState.session.participantIds.includes(currentUser.id)) {
+        return res.status(403).json({ error: "Anda bukan peserta pada sesi ini." });
+      }
+      // Time limit uses the server's shared absolute start and deadline.
+      const startTime = dbState.session.currentRound.startTime;
+      if (startTime === null || Date.now() < startTime) {
+        return res.status(425).json({ error: "Ronde belum dimulai. Tunggu hitung mundur selesai." });
+      }
+      const elapsed = Date.now() - startTime;
       if (elapsed >= ROUND_DURATION_MS) {
         return res.status(408).json({ error: "Waktu habis! Ronde sudah berakhir." });
       }
@@ -1071,8 +1082,14 @@ export async function createApp() {
       return res.status(400).json({ error: "Belum ada cerita dari pemain. Minta pemain membuat cerita dulu." });
     }
 
-    const players = dbState.users.filter(user => !user.isAdmin);
-    players.forEach(user => { user.isEliminated = false; });
+    const participants = dbState.users.filter(user => !user.isAdmin && user.isReady);
+    if (participants.length === 0) {
+      return res.status(400).json({ error: "Belum ada pemain berstatus siap." });
+    }
+    const participantIds = participants.map(user => user.id);
+    dbState.users.filter(user => !user.isAdmin).forEach(user => {
+      user.isEliminated = !participantIds.includes(user.id);
+    });
 
     // Fisher–Yates avoids the biased comparator shuffle and only copies the selected candidates.
     const shuffled = [...allStories];
@@ -1096,6 +1113,7 @@ export async function createApp() {
       },
       roundIndex: 0,
       revealedStoryIds: [],
+      participantIds,
       ackedPlayerIds: []
     };
     dbState.users.forEach(user => { if (!user.isAdmin) user.isReady = false; });
@@ -1226,13 +1244,15 @@ export async function createApp() {
     if (dbState.session.phase !== "armed" || !dbState.session.currentRound) {
       return res.json(getSafeGameState(currentUser));
     }
-    if (!currentUser.isAdmin && !dbState.session.ackedPlayerIds?.includes(currentUser.id)) {
+    if (!dbState.session.participantIds.includes(currentUser.id)) {
+      return res.json(getSafeGameState(currentUser));
+    }
+    if (!dbState.session.ackedPlayerIds?.includes(currentUser.id)) {
       dbState.session.ackedPlayerIds = [
         ...(dbState.session.ackedPlayerIds || []),
         currentUser.id
       ];
-      const allPlayers = dbState.users.filter(u => !u.isAdmin);
-      const allAcked = allPlayers.every(p => dbState.session.ackedPlayerIds?.includes(p.id));
+      const allAcked = dbState.session.participantIds.every(id => dbState.session.ackedPlayerIds?.includes(id));
       if (allAcked) {
         await startArmedRound();
       } else {
@@ -1250,7 +1270,7 @@ export async function createApp() {
     if (dbState.session.phase !== "playing" || !round) {
       return res.json(getSafeGameState(currentUser));
     }
-    if (Date.now() - round.startTime < ROUND_DURATION_MS) {
+    if (round.startTime === null || Date.now() < round.startTime + ROUND_DURATION_MS) {
       return res.json(getSafeGameState(currentUser));
     }
     await endRound();
@@ -1330,41 +1350,39 @@ export async function createApp() {
         // Armed round: full duration remains until all players load.
         s.currentRound.remainingMs = ROUND_DURATION_MS;
       } else {
-        const elapsed = Date.now() - s.currentRound.startTime;
-        s.currentRound.remainingMs = Math.max(0, ROUND_DURATION_MS - elapsed);
+        const remaining = s.currentRound.startTime + ROUND_DURATION_MS - Date.now();
+        s.currentRound.remainingMs = Math.min(ROUND_DURATION_MS, Math.max(0, remaining));
       }
     }
     return s;
   }
 
-  /** Flips an armed round to "playing": sets startTime so all players' 30s
-   *  countdown begins from the same instant. */
+  /** Publishes one future server timestamp after every participant has loaded. */
   async function startArmedRound() {
     const round = dbState.session.currentRound;
     if (!round || dbState.session.phase !== "armed") return;
-    round.startTime = Date.now();
+    round.startTime = Date.now() + ROUND_START_DELAY_MS;
     dbState.session.phase = "playing";
-    dbState.session.ackedPlayerIds = [];
     scheduleServerRoundExpiry();
     await saveDB();
   }
 
-  /** Auto-starts an armed round after a short fallback even if some players
-   *  never ack (e.g. tab closed). All acks => start immediately. */
+  /** Armed rounds wait for every frozen participant. No timeout may silently
+   * remove part of a participant's 30-second window. */
   function scheduleArmedRoundStart() {
-    if (roundTimeoutTimer) clearTimeout(roundTimeoutTimer);
-    // Wait up to 5s for everyone to load, then start regardless.
-    const FALLBACK_MS = 5_000;
-    roundTimeoutTimer = setTimeout(async () => {
-      const round = dbState.session.currentRound;
-      if (dbState.session.phase !== "armed" || !round) return;
-      await startArmedRound();
-    }, FALLBACK_MS);
+    if (roundTimeoutTimer) {
+      clearTimeout(roundTimeoutTimer);
+      roundTimeoutTimer = null;
+    }
   }
 
   function scheduleServerRoundExpiry() {
     if (roundTimeoutTimer) clearTimeout(roundTimeoutTimer);
     
+    const startTime = dbState.session.currentRound?.startTime;
+    if (startTime === null || startTime === undefined) return;
+    const delayMs = Math.max(0, startTime + ROUND_DURATION_MS - Date.now() + 100);
+
     roundTimeoutTimer = setTimeout(async () => {
       try {
         if (pool) {
@@ -1378,7 +1396,7 @@ export async function createApp() {
               if (dbState.session.phase === "playing" && dbState.session.currentRound && dbState.session.currentRound.startTime !== null) {
                 const elapsed = Date.now() - dbState.session.currentRound.startTime;
                 if (elapsed >= ROUND_DURATION_MS) {
-                  await endRound();
+                  await requestDatabase.run({ client }, () => endRound());
                 }
               }
             }
@@ -1401,7 +1419,7 @@ export async function createApp() {
       } catch (error) {
         console.error("Error ending round automatically on server:", error);
       }
-    }, ROUND_DURATION_MS + 2000);
+    }, delayMs);
   }
 
   // Background auth tokens cleanup check every 10 minutes

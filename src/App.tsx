@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GameState, SubmittedStory, User } from "./types";
+import { GameState, ROUND_DURATION_MS, SubmittedStory, User } from "./types";
 import Header from "./components/Header";
 import Leaderboard from "./components/Leaderboard";
 import ChatRoom from "./components/ChatRoom";
@@ -14,7 +14,7 @@ const emptyGameState = (): GameState => ({
   stories: [],
   chat: [],
   guessLogs: [],
-  session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [] },
+  session: { phase: "idle", sessionId: null, mysteryIds: [], totalMysteries: 0, endedAt: null, currentRound: null, roundIndex: 0, revealedStoryIds: [], participantIds: [] },
   myResults: undefined
 });
 
@@ -63,6 +63,15 @@ export default function App() {
   const authTokenRef = useRef<string | null>(null);
   const etagRef = useRef<string | null>(null);
   const expiredRoundRef = useRef<string | null>(null);
+  const serverOffsetRef = useRef(0);
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
+
+  const syncServerClock = useCallback((serverTime: number | undefined, requestStartedAt: number) => {
+    if (typeof serverTime !== "number") return;
+    const offset = serverTime - (requestStartedAt + Date.now()) / 2;
+    serverOffsetRef.current = offset;
+    setServerOffsetMs(offset);
+  }, []);
 
   // A user id alone is not a session credential. Older stored values are discarded.
   useEffect(() => {
@@ -102,6 +111,7 @@ export default function App() {
       const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
       if (etagRef.current) headers["If-None-Match"] = etagRef.current;
       const url = force ? "/api/game/state?bypassCache=true" : "/api/game/state";
+      const requestStartedAt = Date.now();
       const response = await fetch(url, { headers, signal: controller.signal });
       if (activeUserIdRef.current !== userId) return;
       if (response.status === 401) {
@@ -126,6 +136,7 @@ export default function App() {
       const data = await readResponseData(response) as GameState;
       if (activeUserIdRef.current !== userId) return;
 
+      syncServerClock(data.serverTime, requestStartedAt);
       setGameState(data);
       setPollError(false);
 
@@ -161,11 +172,10 @@ export default function App() {
         pollInFlightRef.current = false;
       }
     }
-  }, []);
+  }, [syncServerClock]);
 
-  // Poll only while a valid signed-in session is active, and never overlap requests.
-  // Polls every 2s whenever a game session is alive (lobby wait → playing →
-  // between rounds) so players learn about new rounds within 2s, not 5s.
+  // Poll quickly while an armed round is collecting load acknowledgements, then
+  // return to the normal active-session interval after the shared start is scheduled.
   useEffect(() => {
     const userId = currentUser?.id;
     activeUserIdRef.current = userId ?? null;
@@ -177,7 +187,7 @@ export default function App() {
     }
 
     const sessionActive = !!gameState.session.sessionId;
-    const pollIntervalMs = sessionActive ? 2_000 : 5_000;
+    const pollIntervalMs = gameState.session.phase === "armed" ? 250 : sessionActive ? 2_000 : 5_000;
 
     const stopPolling = () => {
       if (pollIntervalRef.current !== null) {
@@ -210,8 +220,8 @@ export default function App() {
     };
   }, [currentUser?.id, gameState.session.phase, fetchGameState]);
 
-  // A round's start time is immutable, so expiry can be scheduled locally without
-  // making each five-second state poll a unique response.
+  // The server publishes an immutable startTime. Expiry is scheduled from its
+  // absolute deadline using the measured server-clock offset.
   useEffect(() => {
     const round = gameState.session.phase === "playing" ? gameState.session.currentRound : null;
     const userId = currentUser?.id;
@@ -231,16 +241,18 @@ export default function App() {
       }).catch((error) => console.error("Gagal menutup ronde yang berakhir:", error));
     };
 
-    const remainingMs = round.remainingMs;
+    const deadline = round.startTime === null ? null : round.startTime + ROUND_DURATION_MS;
+    if (deadline === null) return;
+    const remainingMs = deadline - (Date.now() + serverOffsetRef.current);
     if (remainingMs <= 0) {
       expireRound();
       return;
     }
 
     expiredRoundRef.current = null;
-    const timeout = window.setTimeout(expireRound, remainingMs);
+    const timeout = window.setTimeout(expireRound, remainingMs + 25);
     return () => window.clearTimeout(timeout);
-  }, [currentUser?.id, fetchGameState, gameState.session.currentRound?.storyId, gameState.session.currentRound?.startTime, gameState.session.phase]);
+  }, [currentUser?.id, fetchGameState, gameState.session.currentRound?.storyId, gameState.session.currentRound?.startTime, gameState.session.phase, serverOffsetMs]);
 
   // Saat admin memulai ronde, semua pemain langsung melihat cerita aktif.
   useEffect(() => {
@@ -344,15 +356,17 @@ export default function App() {
 
   const handleRoundReady = useCallback(async () => {
     if (!currentUser) return;
+    const requestStartedAt = Date.now();
     const response = await fetch("/api/game/round/ready", {
       method: "POST",
       headers: authenticationHeaders(authTokenRef.current)
     });
     const data = await readResponseData(response) as GameState;
     if (response.ok && data) {
+      syncServerClock(data.serverTime, requestStartedAt);
       setGameState(data);
     }
-  }, [currentUser]);
+  }, [currentUser, syncServerClock]);
 
   const handleLobbyReady = useCallback(async () => {
     if (!currentUser) return;
@@ -634,6 +648,7 @@ export default function App() {
                     onGuessStory={handleGuessStory}
                     onLobbyReady={handleLobbyReady}
                     onRoundReady={handleRoundReady}
+                    serverOffsetMs={serverOffsetMs}
                   />
                 </div>
               )}
@@ -727,6 +742,7 @@ export default function App() {
                   onEndSession={handleEndSession}
                   onStartRound={handleStartRound}
                   onEndRound={handleEndRound}
+                  serverOffsetMs={serverOffsetMs}
                 />
               )}
               </div>

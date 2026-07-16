@@ -59,14 +59,34 @@ export interface SessionRound {
   storyId: string;
   /** null while the round is "armed" and waiting for all players to load. */
   startTime: number | null;
-  /** Stored duration at round creation; clients derive the live countdown from startTime. */
+  /** Snapshot for transport; clients derive live time from startTime and the server clock. */
   remainingMs: number;
   roundIndex: number; // 0-based
 }
 
-export function getRoundRemainingMs(round: SessionRound, now = Date.now(), serverOffset = 0) {
+export type RoundClockState = "armed" | "scheduled" | "active" | "expired";
+
+export function getRoundTiming(round: SessionRound, now = Date.now(), serverOffset = 0) {
+  if (round.startTime === null) {
+    return { state: "armed" as const, startsInMs: null, remainingMs: ROUND_DURATION_MS };
+  }
+
   const syncedNow = now + serverOffset;
-  return Math.max(0, ROUND_DURATION_MS - (syncedNow - round.startTime));
+  const startsInMs = Math.max(0, round.startTime - syncedNow);
+  if (startsInMs > 0) {
+    return { state: "scheduled" as const, startsInMs, remainingMs: ROUND_DURATION_MS };
+  }
+
+  const remainingMs = Math.min(ROUND_DURATION_MS, Math.max(0, round.startTime + ROUND_DURATION_MS - syncedNow));
+  return {
+    state: remainingMs > 0 ? "active" as const : "expired" as const,
+    startsInMs: 0,
+    remainingMs
+  };
+}
+
+export function getRoundRemainingMs(round: SessionRound, now = Date.now(), serverOffset = 0) {
+  return getRoundTiming(round, now, serverOffset).remainingMs;
 }
 
 export interface PlayerAnswer {
@@ -95,6 +115,8 @@ export interface Session {
   roundIndex: number; // how many rounds completed so far
   revealedStoryIds: string[]; // stories whose answers have been revealed after round end
   lastRevealed?: RevealedAnswer; // most recently revealed answer (for showing reveal card)
+  /** Player IDs frozen when the admin starts the session. */
+  participantIds: string[];
   /** Player IDs that have acked they finished loading the current armed round. */
   ackedPlayerIds?: string[];
 }
