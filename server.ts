@@ -561,7 +561,18 @@ export async function createApp() {
     if (!authorization?.startsWith("Bearer ")) return null;
     const tokenHash = createHash("sha256").update(authorization.slice(7)).digest("hex");
     const session = state.authTokens?.find(item => item.tokenHash === tokenHash && item.expiresAt > Date.now());
-    return session ? state.users.find(user => user.id === session.userId) || null : null;
+    if (!session) return null;
+    const user = state.users.find(user => user.id === session.userId);
+    if (user) {
+      const now = Date.now();
+      if (now - (user.lastActiveAt || 0) > 10_000) {
+        user.lastActiveAt = now;
+        saveDBBackground();
+      } else {
+        user.lastActiveAt = now;
+      }
+    }
+    return user || null;
   };
 
   // ------------------------- API Routes -------------------------
@@ -1082,17 +1093,26 @@ export async function createApp() {
       return res.status(400).json({ error: "Belum ada cerita dari pemain. Minta pemain membuat cerita dulu." });
     }
 
-    let participants = dbState.users.filter(user => !user.isAdmin && user.isReady);
+    let participants = dbState.users.filter(user => {
+      if (user.isAdmin) return false;
+      const isOnline = Date.now() - (user.lastActiveAt || 0) < 15_000;
+      if (!isOnline) {
+        user.isReady = false;
+      }
+      return user.isReady && isOnline;
+    });
+
     if (participants.length === 0) {
       participants = dbState.users.filter(user => {
         if (user.isAdmin) return false;
+        const isOnline = Date.now() - (user.lastActiveAt || 0) < 15_000;
         const storyCount = dbState.stories.filter(s => s.userId === user.id).length;
-        return storyCount >= 2;
+        return storyCount >= 2 && isOnline;
       });
     }
 
     if (participants.length === 0) {
-      return res.status(400).json({ error: "Belum ada pemain yang siap atau mengumpulkan minimal 2 cerita." });
+      return res.status(400).json({ error: "Belum ada pemain online yang siap atau memiliki minimal 2 cerita." });
     }
     const participantIds = participants.map(user => user.id);
     dbState.users.filter(user => !user.isAdmin).forEach(user => {

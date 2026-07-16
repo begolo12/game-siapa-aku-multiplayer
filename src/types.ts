@@ -7,6 +7,7 @@ export interface User {
   isAdmin: boolean;
   isReady?: boolean;
   isEliminated?: boolean;
+  lastActiveAt?: number;
 }
 
 export interface StoryTemplate {
