@@ -69,10 +69,10 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       ackedRef.current = false;
       return;
     }
-    if (currentUser?.isAdmin || currentUser?.isEliminated || ackedRef.current) return;
+    if (!currentUser || currentUser.isAdmin || currentUser.isEliminated || ackedRef.current) return;
     ackedRef.current = true;
     void onRoundReady();
-  }, [session.phase, session.currentRound?.storyId, currentUser?.isAdmin, currentUser?.isEliminated, onRoundReady]);
+  }, [session.phase, session.currentRound?.storyId, currentUser, onRoundReady]);
 
   useEffect(() => {
     if (!isRoundActive || !session.currentRound) return;

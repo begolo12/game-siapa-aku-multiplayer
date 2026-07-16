@@ -187,7 +187,7 @@ export default function App() {
     }
 
     const sessionActive = !!gameState.session.sessionId;
-    const pollIntervalMs = gameState.session.phase === "armed" ? 250 : sessionActive ? 2_000 : 5_000;
+    const pollIntervalMs = gameState.session.phase === "armed" ? 1_500 : sessionActive ? 2_000 : 5_000;
 
     const stopPolling = () => {
       if (pollIntervalRef.current !== null) {
