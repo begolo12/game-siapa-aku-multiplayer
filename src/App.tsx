@@ -843,12 +843,14 @@ export default function App() {
                 currentUserId={currentUser.id}
               />
 
-              {/* Chat Room Card */}
-              <ChatRoom
-                chat={gameState.chat}
-                currentUser={currentUser}
-                onSendMessage={handleSendMessage}
-              />
+              {/* Chat Room Card — admin only */}
+              {currentUser.isAdmin && (
+                <ChatRoom
+                  chat={gameState.chat}
+                  currentUser={currentUser}
+                  onSendMessage={handleSendMessage}
+                />
+              )}
             </div>
 
           </div>
