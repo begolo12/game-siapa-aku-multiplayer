@@ -6,7 +6,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomInt, randomUUID, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { Pool, PoolClient } from "pg";
+import { Server as HttpServer } from "http";
+import { Server as SocketIOServer, Socket } from "socket.io";
 import { User, SubmittedStory, ChatMessage, GuessLog, StoryTemplate, GamePhase, PlayerAnswer, Session } from "./src/types";
+import cors from "cors";
 
 // Standard preset templates — semua bertema proyek konstruksi & perusahaan
 const PRESET_TEMPLATES: StoryTemplate[] = [
@@ -59,7 +62,7 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
 ];
 
 const DB_FILE = path.join(process.cwd(), "data-store.json");
-const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ROUND_DURATION_MS = 35_000;
 const ROUND_START_DELAY_MS = 5_000;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -89,7 +92,12 @@ let lastLocalUpdate = Date.now(); // local fallback timestamp
 
 let roundTimeoutTimer: NodeJS.Timeout | null = null;
 
-const scrypt = promisify(scryptCallback);
+const scrypt = (password: string | Buffer, salt: string | Buffer, keylen: number, options?: { N?: number; r?: number; p?: number; maxmem?: number }): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    (scryptCallback as any)(password, salt, keylen, options, (err: Error | null, derived: Buffer) => {
+      if (err) reject(err); else resolve(derived);
+    });
+  });
 const requestDatabase = new AsyncLocalStorage<{ client: PoolClient; mutationCommitted?: boolean }>();
 
 /** Catches unhandled rejections from async Express route handlers and forwards them to the error middleware. */
@@ -105,7 +113,7 @@ function hashSessionToken(token: string) {
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
-  const derived = await scrypt(password, salt, 64) as Buffer;
+  const derived = await scrypt(password, salt, 64, { N: 65536 }) as Buffer;
   return `${salt}:${derived.toString("hex")}`;
 }
 
@@ -249,12 +257,16 @@ async function saveFileDB() {
     }
     // Write compact JSON (no pretty-print spaces) to save CPU and space
     await fs.promises.writeFile(DB_FILE, JSON.stringify(dbState), "utf-8");
+    await fs.promises.chmod(DB_FILE, 0o600);
   } catch (error) {
     console.error("Error saving database file:", error);
   }
 }
 
 async function initDatabase() {
+  if (!INITIAL_ADMIN_PASSWORD) {
+    throw new Error("ADMIN_PASSWORD environment variable is required. Set it in your .env file.");
+  }
   if (process.env.VERCEL && !process.env.ADMIN_PASSWORD) {
     throw new Error("ADMIN_PASSWORD is required for Vercel deployments.");
   }
@@ -344,6 +356,72 @@ function saveDBBackground() {
   triggerBackgroundSave();
 }
 
+const getSafeGameState = (currentUser: User | null, state = dbState) => {
+  const usersSafe = state.users.map(({ password: _, passwordHash: __, ...user }) => user);
+  const activeStoryId = state.session.currentRound?.storyId;
+  const storiesSafe = state.stories.map(story => {
+    const canSeeAnswer = currentUser && (
+      currentUser.isAdmin ||
+      currentUser.id === story.userId ||
+      story.isSolvedBy.includes(currentUser.id) ||
+      state.session.revealedStoryIds.includes(story.id)
+    );
+    if (canSeeAnswer) return story;
+    const { answer, userId, ...storySafe } = story;
+    const isActiveMystery = activeStoryId === story.id;
+    return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
+  });
+  const safeSession = roundSafeSession(state.session);
+  return {
+    users: usersSafe,
+    stories: storiesSafe,
+    chat: state.chat,
+    guessLogs: state.guessLogs.map(log => log.storyId === activeStoryId ? { ...log, targetUsername: "Pemain Misterius" } : log),
+    session: safeSession,
+    myResults: safeSession.phase === "ended" && currentUser
+      ? state.playerResults.filter(result => result.userId === currentUser.id)
+      : undefined,
+    serverTime: Date.now()
+  };
+};
+
+/** Returns session with fresh remainingMs computed from stored startTime. */
+function roundSafeSession(session?: Session) {
+  const src = session ?? dbState.session;
+  const s = { ...src, currentRound: src.currentRound ? { ...src.currentRound } : null };
+  if (s.currentRound) {
+    if (s.currentRound.startTime === null) {
+      // Armed round: full duration remains until all players load.
+      s.currentRound.remainingMs = ROUND_DURATION_MS;
+    } else {
+      const remaining = s.currentRound.startTime + ROUND_DURATION_MS - Date.now();
+      s.currentRound.remainingMs = Math.min(ROUND_DURATION_MS, Math.max(0, remaining));
+    }
+  }
+  return s;
+}
+
+let io: SocketIOServer | null = null;
+
+export function getIO(): SocketIOServer | null { return io; }
+
+/** Broadcast the current game state to all connected clients. */
+export function broadcastGameState() {
+  if (!io) return;
+  const body = getSafeGameState(null);
+  io.to("game").emit("state:update", body);
+}
+
+/** Broadcast a focused event + full state to all connected clients. */
+export function broadcastEvent(event: string, data?: Record<string, unknown>) {
+  if (!io) return;
+  const body = getSafeGameState(null);
+  if (data) {
+    io.to("game").emit(event, data);
+  }
+  io.to("game").emit("state:update", body);
+}
+
 async function getStateForRead(bypassCache = false): Promise<{ state: DBState; updatedAt: number }> {
   if (!pool) {
     return { state: dbState, updatedAt: lastLocalUpdate };
@@ -388,10 +466,14 @@ export async function createApp() {
 
   app.use(express.json({ limit: "32kb" }));
 
+  // CORS configuration
+  const allowedOrigin = process.env.ALLOWED_ORIGIN || "http://localhost:3001";
+  app.use(cors({ origin: allowedOrigin, credentials: false }));
+
   // Limit API calls only; Vite module requests must never receive API throttling.
   const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
   app.use("/api", (req, res, next) => {
-    const ip = (req.headers['x-forwarded-for'] as string || '').split(',')[0].trim() || req.ip || req.socket.remoteAddress || "unknown";
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
     const limit = req.method === "GET" ? 15 : 5; // 15 req/sec for GET, 5 req/sec for mutations
     const windowMs = 1000;
@@ -526,34 +608,7 @@ export async function createApp() {
     }
   };
 
-  const getSafeGameState = (currentUser: User | null, state = dbState) => {
-    const usersSafe = state.users.map(({ password: _, passwordHash: __, ...user }) => user);
-    const activeStoryId = state.session.currentRound?.storyId;
-    const storiesSafe = state.stories.map(story => {
-      const canSeeAnswer = currentUser && (
-        currentUser.isAdmin ||
-        currentUser.id === story.userId ||
-        story.isSolvedBy.includes(currentUser.id) ||
-        state.session.revealedStoryIds.includes(story.id)
-      );
-      if (canSeeAnswer) return story;
-      const { answer, userId, ...storySafe } = story;
-      const isActiveMystery = activeStoryId === story.id;
-      return isActiveMystery ? { ...storySafe, username: "Pemain Misterius" } : storySafe;
-    });
-    const safeSession = roundSafeSession(state.session);
-    return {
-      users: usersSafe,
-      stories: storiesSafe,
-      chat: state.chat,
-      guessLogs: state.guessLogs.map(log => log.storyId === activeStoryId ? { ...log, targetUsername: "Pemain Misterius" } : log),
-      session: safeSession,
-      myResults: safeSession.phase === "ended" && currentUser
-        ? state.playerResults.filter(result => result.userId === currentUser.id)
-        : undefined,
-      serverTime: Date.now()
-    };
-  };
+
 
   // Authentication uses a server-issued opaque bearer token; never trust a client-supplied user id.
   const getRequestUser = (req: express.Request, state = dbState): (User & { passwordHash?: string; password?: string }) | null => {
@@ -564,13 +619,7 @@ export async function createApp() {
     if (!session) return null;
     const user = state.users.find(user => user.id === session.userId);
     if (user) {
-      const now = Date.now();
-      if (now - (user.lastActiveAt || 0) > 10_000) {
-        user.lastActiveAt = now;
-        saveDBBackground();
-      } else {
-        user.lastActiveAt = now;
-      }
+      user.lastActiveAt = Date.now();
     }
     return user || null;
   };
@@ -663,8 +712,17 @@ export async function createApp() {
   }));
 
   // GET polling is served from an independent PostgreSQL snapshot and never mutates global state.
-  app.get("/api/game/state", (req, res) => {
-    const state = (res.locals.state as DBState | undefined) || dbState;
+  app.get("/api/game/state", asyncHandler(async (req, res) => {
+    let state = (res.locals.state as DBState | undefined) || dbState;
+
+    if (state.session.phase === "armed" && state.session.currentRound && state.session.currentRound.armedAt) {
+      const elapsed = Date.now() - state.session.currentRound.armedAt;
+      if (elapsed >= 10_000) {
+        await startArmedRound();
+        state = dbState;
+      }
+    }
+
     const updatedAt = (res.locals.stateUpdatedAt as number | undefined) || lastLocalUpdate;
     const currentUser = getRequestUser(req, state);
 
@@ -677,7 +735,7 @@ export async function createApp() {
 
     const body = getSafeGameState(currentUser, state);
     res.json(body);
-  });
+  }));
 
   // Add a story (Wizard 1 + Wizard 2 Submit)
   app.post("/api/game/story", asyncHandler(async (req, res) => {
@@ -751,6 +809,7 @@ export async function createApp() {
     dbState.chat.push(systemAnnouncement);
 
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -769,6 +828,7 @@ export async function createApp() {
     }
     story.blanks = blanks.map(blank => blank.trim());
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -904,6 +964,7 @@ export async function createApp() {
     }
 
     await saveDB();
+    broadcastGameState();
     const body = getSafeGameState(currentUser);
     res.json({ isCorrect, answer: isCorrect ? story.answer : undefined, gameState: body });
   }));
@@ -917,6 +978,7 @@ export async function createApp() {
     if (storyCount < 2) return res.status(400).json({ error: `Lengkapi 2 cerita dulu (${storyCount}/2).` });
     currentUser.isReady = !currentUser.isReady;
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -946,7 +1008,7 @@ export async function createApp() {
       dbState.chat = dbState.chat.slice(dbState.chat.length - 200);
     }
     
-    saveDBBackground();
+    broadcastGameState();
     
     const body = getSafeGameState(currentUser);
     res.json(body);
@@ -983,7 +1045,11 @@ export async function createApp() {
 
     const previousName = user.username;
     user.username = username;
-    if (password) user.passwordHash = await hashPassword(password);
+    if (password) {
+      user.passwordHash = await hashPassword(password);
+      // Invalidate all existing sessions for this user
+      dbState.authTokens = (dbState.authTokens || []).filter(t => t.userId !== user.id);
+    }
     dbState.stories.filter(s => s.userId === user.id).forEach(s => { s.username = username; s.answer = username; });
     dbState.chat.filter(m => m.userId === user.id).forEach(m => { m.username = username; });
     dbState.guessLogs.forEach(log => {
@@ -991,6 +1057,7 @@ export async function createApp() {
       if (log.targetUsername === previousName) log.targetUsername = username;
     });
     await saveDB();
+    broadcastGameState();
     const { password: _, passwordHash: __, ...safeUser } = user;
     res.json({ user: safeUser });
   }));
@@ -1013,6 +1080,7 @@ export async function createApp() {
     dbState.playerResults = dbState.playerResults.filter(result => result.userId !== user.id && !storyIds.includes(result.storyId));
     dbState.authTokens = (dbState.authTokens || []).filter(token => token.userId !== user.id);
     await saveDB();
+    broadcastGameState();
     res.json({ success: true });
   }));
 
@@ -1040,6 +1108,7 @@ export async function createApp() {
       roundTimeoutTimer = null;
     }
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -1076,6 +1145,7 @@ export async function createApp() {
     }
     
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -1136,6 +1206,7 @@ export async function createApp() {
       currentRound: {
         storyId: selected[0].id,
         startTime: null,
+        armedAt: Date.now(),
         remainingMs: ROUND_DURATION_MS,
         roundIndex: 0
       },
@@ -1166,6 +1237,7 @@ export async function createApp() {
 
     scheduleArmedRoundStart();
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -1179,6 +1251,7 @@ export async function createApp() {
       return res.status(400).json({ error: "Tidak ada sesi aktif." });
     }
     await endSession();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -1231,6 +1304,7 @@ export async function createApp() {
     dbState.session.currentRound = {
       storyId,
       startTime: null,
+      armedAt: Date.now(),
       remainingMs: ROUND_DURATION_MS,
       roundIndex: dbState.session.roundIndex
     };
@@ -1249,6 +1323,7 @@ export async function createApp() {
 
     scheduleArmedRoundStart();
     await saveDB();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -1263,6 +1338,7 @@ export async function createApp() {
     }
 
     await endRound();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
   // Player: acknowledge that the armed round has loaded on their screen.
@@ -1285,6 +1361,7 @@ export async function createApp() {
         await startArmedRound();
       } else {
         await saveDB();
+        broadcastGameState();
       }
     }
     res.json(getSafeGameState(currentUser));
@@ -1302,6 +1379,7 @@ export async function createApp() {
       return res.json(getSafeGameState(currentUser));
     }
     await endRound();
+    broadcastGameState();
     res.json(getSafeGameState(currentUser));
   }));
 
@@ -1367,23 +1445,10 @@ export async function createApp() {
     }
     
     await saveDB();
+    broadcastGameState();
   }
 
-  /** Returns session with fresh remainingMs computed from stored startTime. */
-  function roundSafeSession(session?: Session) {
-    const src = session ?? dbState.session;
-    const s = { ...src, currentRound: src.currentRound ? { ...src.currentRound } : null };
-    if (s.currentRound) {
-      if (s.currentRound.startTime === null) {
-        // Armed round: full duration remains until all players load.
-        s.currentRound.remainingMs = ROUND_DURATION_MS;
-      } else {
-        const remaining = s.currentRound.startTime + ROUND_DURATION_MS - Date.now();
-        s.currentRound.remainingMs = Math.min(ROUND_DURATION_MS, Math.max(0, remaining));
-      }
-    }
-    return s;
-  }
+
 
   /** Publishes one future server timestamp after every participant has loaded. */
   async function startArmedRound() {
@@ -1393,6 +1458,7 @@ export async function createApp() {
     dbState.session.phase = "playing";
     scheduleServerRoundExpiry();
     await saveDB();
+    broadcastGameState();
   }
 
   /** Auto-starts an armed round after a short fallback even if some players
@@ -1429,6 +1495,7 @@ export async function createApp() {
                 const elapsed = Date.now() - dbState.session.currentRound.startTime;
                 if (elapsed >= ROUND_DURATION_MS) {
                   await requestDatabase.run({ client }, () => endRound());
+                  broadcastGameState();
                 }
               }
             }
@@ -1445,6 +1512,7 @@ export async function createApp() {
             const elapsed = Date.now() - dbState.session.currentRound.startTime;
             if (elapsed >= ROUND_DURATION_MS) {
               await endRound();
+              broadcastGameState();
             }
           }
         }
@@ -1538,8 +1606,45 @@ export async function createApp() {
 if (!process.env.VERCEL) {
   createApp().then(app => {
     const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+    const httpServer = new HttpServer(app);
+    io = new SocketIOServer(httpServer, {
+      cors: { origin: process.env.ALLOWED_ORIGIN || "http://localhost:3001", credentials: false }
+    });
+
+    io.use((socket, next) => {
+      const token = socket.handshake.auth?.token as string | undefined;
+      if (!token) return next(new Error("Authentication required"));
+      try {
+        const tokenHash = createHash("sha256").update(token).digest("hex");
+        const session = dbState.authTokens?.find(t => t.tokenHash === tokenHash && t.expiresAt > Date.now());
+        if (!session) return next(new Error("Invalid or expired token"));
+        const user = dbState.users.find(u => u.id === session.userId);
+        if (!user) return next(new Error("User not found"));
+        (socket as any).userId = user.id;
+        (socket as any).username = user.username;
+        next();
+      } catch {
+        next(new Error("Authentication failed"));
+      }
+    });
+
+    io.on("connection", (socket) => {
+      const userId = (socket as any).userId as string;
+      const username = (socket as any).username as string;
+      console.log(`[ws] ${username} connected (${socket.id})`);
+      socket.join("game");
+
+      // Send current state immediately on connect
+      const currentUser = dbState.users.find(u => u.id === userId);
+      socket.emit("state:update", getSafeGameState(currentUser));
+
+      socket.on("disconnect", () => {
+        console.log(`[ws] ${username} disconnected (${socket.id})`);
+      });
+    });
+
+    httpServer.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT} (WebSocket enabled)`);
     });
   }).catch(error => {
     console.error("Server gagal dimulai:", error);

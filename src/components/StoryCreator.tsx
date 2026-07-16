@@ -285,10 +285,6 @@ const StoryCreator = memo(function StoryCreator({ currentUser, onSubmitStory, on
                       </div>
                     ))}
                   </div>
-                  {/* Mini preview */}
-                  <div className="mt-4 p-3 bg-slate-900/50 rounded-xl text-xs text-slate-300 leading-relaxed italic border border-slate-800/50">
-                    "{compileStoryPreview(template)}"
-                  </div>
                 </div>
               );
             })}

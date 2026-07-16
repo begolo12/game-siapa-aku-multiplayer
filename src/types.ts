@@ -60,6 +60,7 @@ export interface SessionRound {
   storyId: string;
   /** null while the round is "armed" and waiting for all players to load. */
   startTime: number | null;
+  armedAt?: number;
   /** Snapshot for transport; clients derive live time from startTime and the server clock. */
   remainingMs: number;
   roundIndex: number; // 0-based
@@ -131,4 +132,17 @@ export interface GameState {
   // For players after session ends
   myResults?: PlayerAnswer[];
   serverTime?: number;
+}
+
+// ─── WebSocket Types ───
+export interface ServerToClientEvents {
+  "state:update": (state: GameState) => void;
+  "guess:result": (data: { isCorrect: boolean; storyId: string; username: string }) => void;
+  "chat:message": (message: ChatMessage) => void;
+  "error": (data: { message: string }) => void;
+}
+
+export interface ClientToServerEvents {
+  "game:join": () => void;
+  "game:leave": () => void;
 }

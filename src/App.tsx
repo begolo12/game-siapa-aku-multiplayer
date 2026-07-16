@@ -8,6 +8,7 @@ import StoryList from "./components/StoryList";
 import AdminPanel from "./components/AdminPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { LogIn, UserPlus, AlertCircle, Gamepad2, Info } from "lucide-react";
+import { io, Socket } from "socket.io-client";
 
 const emptyGameState = (): GameState => ({
   users: [],
@@ -65,6 +66,11 @@ export default function App() {
   const expiredRoundRef = useRef<string | null>(null);
   const serverOffsetRef = useRef(0);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
+
+  // WebSocket
+  const socketRef = useRef<Socket | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const fallbackPollingRef = useRef(false);
 
   const syncServerClock = useCallback((serverTime: number | undefined, requestStartedAt: number) => {
     if (typeof serverTime !== "number") return;
@@ -186,6 +192,8 @@ export default function App() {
       return;
     }
 
+    // Only poll if WebSocket is not connected (fallback mode)
+    if (wsConnected) return;
     const sessionActive = !!gameState.session.sessionId;
     const pollIntervalMs = gameState.session.phase === "armed" ? 1_500 : sessionActive ? 2_000 : 5_000;
 
@@ -218,7 +226,85 @@ export default function App() {
         pollInFlightRef.current = false;
       }
     };
-  }, [currentUser?.id, gameState.session.phase, fetchGameState]);
+  }, [currentUser?.id, gameState.session.phase, fetchGameState, wsConnected]);
+
+  // WebSocket connection — primary real-time channel
+  useEffect(() => {
+    const token = authTokenRef.current;
+    if (!token || !currentUser) return;
+
+    const socket = io({
+      auth: { token },
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("[ws] Connected");
+      setWsConnected(true);
+      setPollError(false);
+      fallbackPollingRef.current = false;
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("[ws] Disconnected:", reason);
+      setWsConnected(false);
+      // If server disconnected us (not transport issue), don't fallback
+      if (reason === "io server disconnect") {
+        socket.connect();
+      }
+    });
+
+    socket.on("state:update", (newState: GameState) => {
+      setGameState(newState);
+
+      // Sync server clock
+      if (newState.serverTime) {
+        const offset = newState.serverTime - Date.now();
+        serverOffsetRef.current = offset;
+        setServerOffsetMs(offset);
+      }
+
+      // Update current user from state
+      const matched = newState.users.find((user) => user.id === currentUser?.id);
+      if (matched) {
+        setCurrentUser((previous) => {
+          if (!previous || previous.id !== currentUser?.id) return previous;
+          if (
+            previous.username === matched.username &&
+            previous.score === matched.score &&
+            previous.solvedCount === matched.solvedCount &&
+            previous.submittedCount === matched.submittedCount &&
+            previous.isAdmin === matched.isAdmin &&
+            previous.isReady === matched.isReady &&
+            previous.isEliminated === matched.isEliminated
+          ) {
+            return previous;
+          }
+          const updated = { ...previous, ...matched };
+          localStorage.setItem("whoami_session", JSON.stringify({ user: updated, token }));
+          return updated;
+        });
+      }
+    });
+
+    socket.on("connect_error", (err) => {
+      console.warn("[ws] Connection error, falling back to polling:", err.message);
+      setWsConnected(false);
+      fallbackPollingRef.current = true;
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+      setWsConnected(false);
+    };
+  }, [currentUser?.id]);
 
   // The server publishes an immutable startTime. Expiry is scheduled from its
   // absolute deadline using the measured server-clock offset.
@@ -304,6 +390,9 @@ export default function App() {
       void fetch("/api/auth/logout", { method: "POST", headers: authenticationHeaders(token) });
     }
     authTokenRef.current = null;
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    setWsConnected(false);
     etagRef.current = null;
     localStorage.removeItem("whoami_session");
     localStorage.removeItem("whoami_user");
