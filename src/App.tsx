@@ -192,8 +192,6 @@ export default function App() {
       return;
     }
 
-    // Only poll if WebSocket is not connected (fallback mode)
-    if (wsConnected) return;
     const sessionActive = !!gameState.session.sessionId;
     const pollIntervalMs = gameState.session.phase === "armed" ? 1_500 : sessionActive ? 2_000 : 5_000;
 
@@ -226,41 +224,41 @@ export default function App() {
         pollInFlightRef.current = false;
       }
     };
-  }, [currentUser?.id, gameState.session.phase, fetchGameState, wsConnected]);
+  }, [currentUser?.id, gameState.session.phase, fetchGameState]);
 
-  // WebSocket connection — primary real-time channel
+  // WebSocket: optional enhancement. Vercel serverless doesn't support WebSocket,
+  // so polling is the primary mechanism. This silently attempts WebSocket once.
   useEffect(() => {
     const token = authTokenRef.current;
     if (!token || !currentUser) return;
 
+    let silenced = false;
+
     const socket = io({
       auth: { token },
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      transports: ["polling"],
+      reconnection: false,
+      timeout: 5000,
     });
 
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      console.log("[ws] Connected");
-      setWsConnected(true);
-      setPollError(false);
-      fallbackPollingRef.current = false;
+      if (!silenced) {
+        console.log("[ws] Connected (real-time enabled)");
+        setWsConnected(true);
+        setPollError(false);
+      }
     });
 
-    socket.on("disconnect", (reason) => {
-      console.log("[ws] Disconnected:", reason);
-      setWsConnected(false);
-      // If server disconnected us (not transport issue), don't fallback
-      if (reason === "io server disconnect") {
-        socket.connect();
+    socket.on("disconnect", () => {
+      if (!silenced) {
+        setWsConnected(false);
       }
     });
 
     socket.on("state:update", (newState: GameState) => {
+      if (silenced) return;
       setGameState(newState);
 
       // Sync server clock
@@ -293,13 +291,13 @@ export default function App() {
       }
     });
 
-    socket.on("connect_error", (err) => {
-      console.warn("[ws] Connection error, falling back to polling:", err.message);
+    socket.on("connect_error", () => {
+      silenced = true;
       setWsConnected(false);
-      fallbackPollingRef.current = true;
     });
 
     return () => {
+      silenced = true;
       socket.disconnect();
       socketRef.current = null;
       setWsConnected(false);
