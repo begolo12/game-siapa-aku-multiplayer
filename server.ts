@@ -475,7 +475,7 @@ export async function createApp() {
   app.use("/api", (req, res, next) => {
     const ip = req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
-    const limit = req.method === "GET" ? 15 : 5; // 15 req/sec for GET, 5 req/sec for mutations
+    const limit = req.method === "GET" ? 60 : 40; // 60 req/sec for GET, 40 req/sec for mutations
     const windowMs = 1000;
     
     // Periodically prune old IPs to prevent memory leaks
@@ -1172,9 +1172,8 @@ export async function createApp() {
     if (participants.length === 0) {
       participants = dbState.users.filter(user => {
         if (user.isAdmin) return false;
-        const isOnline = Date.now() - (user.lastActiveAt || 0) < 15_000;
         const storyCount = dbState.stories.filter(s => s.userId === user.id).length;
-        return storyCount >= 2 && isOnline;
+        return storyCount >= 2;
       });
     }
 
