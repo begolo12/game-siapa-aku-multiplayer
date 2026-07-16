@@ -330,6 +330,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
           const isRoundResult = session.phase === "idle" && session.lastRevealed?.storyId === story.id;
           const isMine = session.phase !== "playing" && story.userId === currentUser?.id;
           const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
+          const hasGuessed = story.guessedBy?.includes(currentUser?.id || "") || false;
           const isStorySolvedByOther = story.isSolvedBy.length > 0;
 
           return (
@@ -401,6 +402,10 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
                     <span className="font-extrabold text-emerald-300 bg-emerald-500/15 border border-emerald-500/20 px-4 py-1.5 rounded-xl text-center">
                       Jawaban: "{story.answer}"
                     </span>
+                  </div>
+                ) : hasGuessed ? (
+                  <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3 text-sm font-semibold text-rose-200 flex items-center gap-2">
+                    🔒 Sudah mengirim tebakan. Tidak bisa mengirim jawaban lagi.
                   </div>
                 ) : isMine ? (
                   <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-sm font-semibold text-amber-200">

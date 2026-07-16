@@ -1178,9 +1178,6 @@ export async function createApp() {
       });
     }
 
-    if (participants.length === 0) {
-      return res.status(400).json({ error: "Belum ada pemain online yang siap atau memiliki minimal 2 cerita." });
-    }
     const participantIds = participants.map(user => user.id);
     dbState.users.filter(user => !user.isAdmin).forEach(user => {
       user.isEliminated = !participantIds.includes(user.id);
