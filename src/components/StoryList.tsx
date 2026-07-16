@@ -61,6 +61,11 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
   const countdown = Math.ceil((roundTiming?.remainingMs ?? 0) / 1_000);
   const isRoundActive = session.phase === "playing" && roundTiming?.state === "active";
 
+  const isParticipant = useMemo(() => {
+    if (!session.sessionId) return true;
+    return session.participantIds?.includes(currentUser?.id || "") ?? false;
+  }, [session.sessionId, session.participantIds, currentUser?.id]);
+
   // When a round is "armed" (waiting for everyone to load), ack once so the
   // server can start the synchronized 30s countdown for all players at once.
   const ackedRef = useRef(false);
@@ -312,9 +317,9 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
         </div>
       )}
 
-      {isRoundActive && currentUser?.isEliminated && (
+      {isRoundActive && (currentUser?.isEliminated || !isParticipant) && (
         <div className="rounded-2xl border border-rose-500/30 bg-rose-950/30 p-4 text-sm font-semibold text-rose-200">
-          Anda gugur pada sesi ini karena belum mengumpulkan 2 cerita sebelum game dimulai.
+          Anda menonton pada sesi ini karena belum mengumpulkan 2 cerita sebelum game dimulai.
         </div>
       )}
 
@@ -401,9 +406,9 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
                   <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-sm font-semibold text-amber-200">
                     Ini cerita Anda. Tunggu pemain lain menebaknya.
                   </div>
-                ) : currentUser?.isEliminated ? (
+                ) : (currentUser?.isEliminated || !isParticipant) ? (
                   <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3 text-sm font-semibold text-rose-200">
-                    Status gugur — tidak dapat menebak pada sesi ini.
+                    Status penonton — tidak dapat menebak pada sesi ini.
                   </div>
                 ) : (
                   <div className="space-y-3">

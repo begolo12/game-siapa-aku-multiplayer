@@ -1082,9 +1082,17 @@ export async function createApp() {
       return res.status(400).json({ error: "Belum ada cerita dari pemain. Minta pemain membuat cerita dulu." });
     }
 
-    const participants = dbState.users.filter(user => !user.isAdmin && user.isReady);
+    let participants = dbState.users.filter(user => !user.isAdmin && user.isReady);
     if (participants.length === 0) {
-      return res.status(400).json({ error: "Belum ada pemain berstatus siap." });
+      participants = dbState.users.filter(user => {
+        if (user.isAdmin) return false;
+        const storyCount = dbState.stories.filter(s => s.userId === user.id).length;
+        return storyCount >= 2;
+      });
+    }
+
+    if (participants.length === 0) {
+      return res.status(400).json({ error: "Belum ada pemain yang siap atau mengumpulkan minimal 2 cerita." });
     }
     const participantIds = participants.map(user => user.id);
     dbState.users.filter(user => !user.isAdmin).forEach(user => {
@@ -1367,13 +1375,17 @@ export async function createApp() {
     await saveDB();
   }
 
-  /** Armed rounds wait for every frozen participant. No timeout may silently
-   * remove part of a participant's 30-second window. */
+  /** Auto-starts an armed round after a short fallback even if some players
+   *  never ack (e.g. tab closed). All acks => start immediately. */
   function scheduleArmedRoundStart() {
-    if (roundTimeoutTimer) {
-      clearTimeout(roundTimeoutTimer);
-      roundTimeoutTimer = null;
-    }
+    if (roundTimeoutTimer) clearTimeout(roundTimeoutTimer);
+    // Wait up to 5s for everyone to load, then start regardless.
+    const FALLBACK_MS = 5_000;
+    roundTimeoutTimer = setTimeout(async () => {
+      const round = dbState.session.currentRound;
+      if (dbState.session.phase !== "armed" || !round) return;
+      await startArmedRound();
+    }, FALLBACK_MS);
   }
 
   function scheduleServerRoundExpiry() {
