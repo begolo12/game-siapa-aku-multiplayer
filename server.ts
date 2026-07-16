@@ -874,9 +874,6 @@ export async function createApp() {
       return res.status(403).json({ error: "Tidak ada sesi aktif. Tidak bisa menebak sekarang." });
     }
 
-    if (story.userId === currentUser.id) {
-      return res.status(403).json({ error: "Anda tidak dapat menebak cerita sendiri." });
-    }
     if (!story.guessedBy) story.guessedBy = [];
     if (story.guessedBy.includes(currentUser.id)) {
       return res.status(400).json({ error: "Anda sudah memakai satu kesempatan pada ronde ini." });

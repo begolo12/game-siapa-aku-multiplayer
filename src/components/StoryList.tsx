@@ -326,7 +326,7 @@ const StoryList = memo(function StoryList({ stories, currentUser, users, session
       {/* Stories Grid: preloaded while armed/scheduled, revealed only at the shared start. */}
       {(isRoundActive || (session.phase !== "playing" && session.phase !== "armed")) && <div className="grid grid-cols-1 gap-6">
         {filteredStories.map((story) => {
-          // Active mystery owner IDs are intentionally withheld; the server rejects self-guesses.
+          // Active mystery owner IDs are withheld from non-owners to keep the guessing game fair.
           const isRoundResult = session.phase === "idle" && session.lastRevealed?.storyId === story.id;
           const isMine = session.phase !== "playing" && story.userId === currentUser?.id;
           const isSolvedByMe = story.isSolvedBy.includes(currentUser?.id || "");
