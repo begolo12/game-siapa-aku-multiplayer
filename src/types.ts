@@ -53,7 +53,7 @@ export interface GuessLog {
 
 export type GamePhase = "idle" | "armed" | "playing" | "ended";
 
-export const ROUND_DURATION_MS = 30_000;
+export const ROUND_DURATION_MS = 35_000;
 
 export interface SessionRound {
   storyId: string;

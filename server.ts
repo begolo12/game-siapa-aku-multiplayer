@@ -60,7 +60,7 @@ const PRESET_TEMPLATES: StoryTemplate[] = [
 
 const DB_FILE = path.join(process.cwd(), "data-store.json");
 const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
-const ROUND_DURATION_MS = 30_000;
+const ROUND_DURATION_MS = 35_000;
 const ROUND_START_DELAY_MS = 5_000;
 const DATABASE_URL = process.env.DATABASE_URL;
 const pool = DATABASE_URL

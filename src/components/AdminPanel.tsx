@@ -84,7 +84,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
 
   const handleStartSession = () => runSessionAction(
     onStartSession,
-    "🎮 Game dimulai! Cerita pertama tampil selama 30 detik."
+    "🎮 Game dimulai! Cerita pertama tampil selama 35 detik."
   );
 
   const handleEndSession = () => runSessionAction(
@@ -293,7 +293,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
                 <>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wide">Mulai Ronde</h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Ronde {session.roundIndex + 1} / {session.totalMysteries}. Pemain mendapat 30 detik.
+                    Ronde {session.roundIndex + 1} / {session.totalMysteries}. Pemain mendapat 35 detik.
                   </p>
                   <div className="mt-3 flex gap-2">
                     <button
@@ -319,7 +319,7 @@ const AdminPanel = memo(function AdminPanel({ currentUser, users, stories, sessi
               ) : (
                 <>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wide">Mulai Game</h3>
-                  <p className="text-xs text-slate-400 mt-1">Hanya pemain berstatus siap yang masuk sesi. Semua mendapat timestamp mulai dan 30 detik yang sama.</p>
+                  <p className="text-xs text-slate-400 mt-1">Hanya pemain berstatus siap yang masuk sesi. Semua mendapat timestamp mulai dan 35 detik yang sama.</p>
                   <button
                     id="start-session-btn"
                     onClick={handleStartSession}

@@ -15,17 +15,17 @@ test("round uses one absolute server timeline", () => {
     startsInMs: 6_000,
     remainingMs: ROUND_DURATION_MS
   });
-  assert.equal(getRoundTiming(round, 10_000).remainingMs, 30_000);
-  assert.equal(getRoundTiming(round, 25_000).remainingMs, 15_000);
-  assert.equal(getRoundTiming(round, 40_000).state, "expired");
-  assert.equal(getRoundTiming(round, 40_000).remainingMs, 0);
+  assert.equal(getRoundTiming(round, 10_000).remainingMs, 35_000);
+  assert.equal(getRoundTiming(round, 25_000).remainingMs, 20_000);
+  assert.equal(getRoundTiming(round, 45_000).state, "expired");
+  assert.equal(getRoundTiming(round, 45_000).remainingMs, 0);
 });
 
 test("different client clocks agree after applying server offsets", () => {
   const slowClient = getRoundTiming(round, 8_000, 7_000);
   const fastClient = getRoundTiming(round, 20_000, -5_000);
   assert.deepEqual(slowClient, fastClient);
-  assert.equal(slowClient.remainingMs, 25_000);
+  assert.equal(slowClient.remainingMs, 30_000);
 });
 
 test("armed and extreme timestamps remain bounded", () => {
